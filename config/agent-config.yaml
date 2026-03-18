@@ -29,3 +29,7 @@ runtime:
   policy: "config/sandbox-policy.yaml"
   gpu: false  # cloud inference, no local GPU needed
   isolation: "container"
+
+# Compliance mode: none, hipaa, soc2, pci, gdpr
+# Set here for default enforcement, or override with --compliance flag
+compliance: "none"

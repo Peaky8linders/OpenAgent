@@ -117,6 +117,18 @@ def memory_stats() -> str:
 
 # ─── LCM Secure Memory Tools ─────────────────────────────────
 
+# Module-level policy ref — set by create_openagent() via set_active_policy()
+_active_policy: object | None = None  # CompliancePolicy or None
+
+
+def set_active_policy(policy: object | None) -> None:
+    """Set the active compliance policy for LCM tools.
+
+    Called by create_openagent() so tools enforce the correct policy.
+    """
+    global _active_policy  # noqa: PLW0603
+    _active_policy = policy
+
 
 def _get_lcm_client():
     """Lazy-init LCM client."""
@@ -130,6 +142,28 @@ def _get_lcm_client():
         return None
 
 
+def _check_policy_patterns(content: str) -> str | None:
+    """Check content against active policy's sentinel_extra_patterns.
+
+    Returns a block reason string if patterns match, None if clear.
+    This enforces policy-specific patterns locally BEFORE sending
+    to LCM, closing the gap where sentinel_extra_patterns were
+    defined but never applied.
+    """
+    if _active_policy is None:
+        return None
+
+    import re
+
+    patterns = getattr(_active_policy, "sentinel_extra_patterns", [])
+    for p in patterns:
+        pattern_str = p.get("pattern", "")
+        category = p.get("category", "unknown")
+        if pattern_str and re.search(pattern_str, content):
+            return f"Policy pattern matched: {category}"
+    return None
+
+
 @tool
 def secure_store(
     content: Annotated[str, "Message content to store securely"],
@@ -139,7 +173,8 @@ def secure_store(
     """Store a message in the encrypted, sentinel-protected LCM memory.
 
     Content is automatically:
-    - Scanned by sentinel for prompt injection/exfiltration attempts
+    - Scanned against active compliance policy patterns (PHI, PCI, etc.)
+    - Scanned by LCM sentinel for prompt injection/exfiltration
     - Checked for PII (emails, phone numbers, SSNs, API keys, etc.)
     - Compressed and topic-segmented
     - Stored with encryption at rest
@@ -147,6 +182,11 @@ def secure_store(
 
     Use this to persist important conversation context securely.
     """
+    # Local policy pattern check (enforces sentinel_extra_patterns)
+    block_reason = _check_policy_patterns(content)
+    if block_reason:
+        return f"BLOCKED by compliance policy: {block_reason}"
+
     client = _get_lcm_client()
     if not client:
         return "LCM secure memory not available (server not running)."
@@ -154,7 +194,8 @@ def secure_store(
     try:
         result = client.ingest(content, role=role, conversation_id=conversation_id)
         pii = "PII detected" if result.get("piiDetected") else "No PII"
-        sentinel = "Sentinel cleared" if result.get("sentinelCleared") else "BLOCKED by sentinel"
+        cleared = result.get("sentinelCleared", result.get("sentinel_cleared"))
+        sentinel = "Sentinel cleared" if cleared else "BLOCKED by sentinel"
         return f"Stored securely. {sentinel}. {pii}."
     except Exception as e:
         if "403" in str(e):

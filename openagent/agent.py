@@ -18,6 +18,7 @@ from openagent.tools import (
     memory_stats,
     secure_search,
     secure_store,
+    set_active_policy,
 )
 
 SYSTEM_PROMPT = """\
@@ -134,6 +135,13 @@ def create_openagent(
     model = create_model(config.model)
     backend = create_backend(config)
     checkpointer = MemorySaver()
+
+    # Wire active compliance policy into LCM tools for enforcement
+    if config.compliance != "none":
+        policy = get_policy(config.compliance)
+        set_active_policy(policy)
+    else:
+        set_active_policy(None)
 
     return create_deep_agent(
         model=model,
