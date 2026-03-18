@@ -1,8 +1,16 @@
-"""Tests for brainiac agent tools."""
+"""Tests for agent tools — brainiac + LCM secure memory."""
 
 from __future__ import annotations
 
-from openagent.tools import memory_save, memory_search, memory_stats
+from openagent.compliance import get_policy
+from openagent.tools import (
+    _check_policy_patterns,
+    memory_save,
+    memory_search,
+    memory_stats,
+    secure_store,
+    set_active_policy,
+)
 
 
 class TestMemorySearchTool:
@@ -38,5 +46,69 @@ class TestMemorySaveTool:
     def test_tool_has_name(self) -> None:
         assert memory_save.name == "memory_save"
 
-    # NOTE: We don't test actual saving here to avoid polluting the graph.
-    # Integration tests would cover that.
+
+class TestSecureStoreTool:
+    """Tests for the secure_store tool."""
+
+    def test_tool_has_name(self) -> None:
+        assert secure_store.name == "secure_store"
+
+
+class TestPolicyPatternEnforcement:
+    """Tests for local policy pattern enforcement in LCM tools."""
+
+    def test_no_policy_allows_all(self) -> None:
+        set_active_policy(None)
+        result = _check_policy_patterns("patient name John Doe")
+        assert result is None
+
+    def test_hipaa_blocks_phi_patterns(self) -> None:
+        policy = get_policy("hipaa")
+        set_active_policy(policy)
+        result = _check_policy_patterns("patient name John Doe MRN 12345")
+        assert result is not None
+        assert "phi_exposure" in result
+
+    def test_hipaa_blocks_clinical_patterns(self) -> None:
+        policy = get_policy("hipaa")
+        set_active_policy(policy)
+        result = _check_policy_patterns("diagnosis is stage 2 cancer")
+        assert result is not None
+        assert "phi_clinical" in result
+
+    def test_pci_blocks_cardholder_data(self) -> None:
+        policy = get_policy("pci")
+        set_active_policy(policy)
+        result = _check_policy_patterns("card CVV is 123")
+        assert result is not None
+        assert "card_security_code" in result
+
+    def test_soc2_blocks_credentials(self) -> None:
+        policy = get_policy("soc2")
+        set_active_policy(policy)
+        result = _check_policy_patterns("password: hunter2")
+        assert result is not None
+        assert "credential_exposure" in result
+
+    def test_gdpr_flags_consent_issues(self) -> None:
+        policy = get_policy("gdpr")
+        set_active_policy(policy)
+        result = _check_policy_patterns("consent not given by user")
+        assert result is not None
+        assert "consent_issue" in result
+
+    def test_clean_content_passes(self) -> None:
+        policy = get_policy("hipaa")
+        set_active_policy(policy)
+        result = _check_policy_patterns("Please review the code in main.py")
+        assert result is None
+
+    def test_none_policy_allows_all(self) -> None:
+        policy = get_policy("none")
+        set_active_policy(policy)
+        result = _check_policy_patterns("patient name John Doe")
+        assert result is None  # none policy has no extra patterns
+
+    def teardown_method(self) -> None:
+        """Reset policy after each test."""
+        set_active_policy(None)
