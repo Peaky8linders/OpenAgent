@@ -48,8 +48,16 @@ class TestGetPolicy:
         assert policy.sentinel_block_suspicious is False
 
     def test_invalid_framework_raises(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Unknown framework"):
             get_policy("invalid")
+
+    def test_none_framework_raises(self) -> None:
+        with pytest.raises(ValueError, match="must not be None"):
+            get_policy(None)
+
+    def test_empty_framework_raises(self) -> None:
+        with pytest.raises(ValueError, match="must not be None or empty"):
+            get_policy("")
 
     def test_case_insensitive(self) -> None:
         policy = get_policy("HIPAA")
@@ -80,16 +88,18 @@ class TestScoreAction:
         assert len(score.findings) == 1
         assert "blocked" in score.findings[0].lower()
 
-    def test_pii_reduces_score_hipaa(self) -> None:
+    def test_pii_redact_all_blocks(self) -> None:
         policy = get_policy("hipaa")
         score = score_action(policy, action="write_file", pii_found=True)
         assert score.score == 0.3  # REDACT_ALL cap
+        assert score.blocked is True  # PII under REDACT_ALL = hard block
         assert "PII detected" in score.findings[0]
 
-    def test_pii_moderate_score_soc2(self) -> None:
+    def test_pii_redact_summaries_does_not_block(self) -> None:
         policy = get_policy("soc2")
         score = score_action(policy, action="write_file", pii_found=True)
         assert score.score == 0.7  # REDACT_SUMMARIES cap
+        assert score.blocked is False  # Not a hard block
 
     def test_missing_audit_high_risk_score(self) -> None:
         policy = get_policy("hipaa")

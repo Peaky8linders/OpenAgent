@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -61,7 +61,7 @@ class OpenAgentConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     harness: HarnessConfig = Field(default_factory=HarnessConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
-    compliance: str = "none"  # hipaa, soc2, pci, gdpr, none
+    compliance: Literal["none", "hipaa", "soc2", "pci", "gdpr"] = "none"
 
 
 def load_config(path: str | Path = "config/agent-config.yaml") -> OpenAgentConfig:
