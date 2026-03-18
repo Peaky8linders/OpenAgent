@@ -66,34 +66,47 @@ class TestScoreAction:
     def test_clean_action_scores_high(self) -> None:
         policy = get_policy("hipaa")
         score = score_action(policy, action="read_file")
-        assert score.score >= 0.9
+        assert score.score == 0.95  # 1.0 minus encryption-at-rest deduction
         assert not score.blocked
 
-    def test_sentinel_flag_blocks(self) -> None:
+    def test_sentinel_flag_blocks_with_early_return(self) -> None:
         policy = get_policy("hipaa")
         score = score_action(
             policy, action="write_file", sentinel_flagged=True,
         )
         assert score.score == 0.0
         assert score.blocked is True
+        # [I1] Early return: only one finding, no leaked PII/audit findings
+        assert len(score.findings) == 1
+        assert "blocked" in score.findings[0].lower()
 
     def test_pii_reduces_score_hipaa(self) -> None:
         policy = get_policy("hipaa")
         score = score_action(policy, action="write_file", pii_found=True)
-        assert score.score <= 0.3
+        assert score.score == 0.3  # REDACT_ALL cap
         assert "PII detected" in score.findings[0]
 
     def test_pii_moderate_score_soc2(self) -> None:
         policy = get_policy("soc2")
         score = score_action(policy, action="write_file", pii_found=True)
-        assert 0.5 <= score.score <= 0.8
+        assert score.score == 0.7  # REDACT_SUMMARIES cap
 
-    def test_missing_audit_reduces_score(self) -> None:
+    def test_missing_audit_high_risk_score(self) -> None:
         policy = get_policy("hipaa")
         score = score_action(
             policy, action="execute", audit_logged=False,
         )
-        assert score.score <= 0.5
+        assert score.score == 0.4  # High-risk + no audit
+        # [I2] Only one audit finding, not two
+        audit_findings = [f for f in score.findings if "audit" in f.lower()]
+        assert len(audit_findings) == 1
+
+    def test_missing_audit_low_risk_score(self) -> None:
+        policy = get_policy("hipaa")
+        score = score_action(
+            policy, action="read_file", audit_logged=False,
+        )
+        assert score.score == 0.5  # Generic audit cap
 
     def test_none_mode_lenient(self) -> None:
         policy = get_policy("none")

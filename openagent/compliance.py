@@ -241,15 +241,18 @@ def score_action(
     Returns:
         ComplianceScore with score, findings, and blocked status.
     """
+    # [I1 fix] Sentinel block: early return to avoid leaking spurious findings
+    if sentinel_flagged and policy.sentinel_block_suspicious:
+        return ComplianceScore(
+            score=0.0,
+            framework=policy.framework,
+            action=action,
+            findings=["Sentinel flagged content as suspicious — action blocked"],
+            blocked=True,
+        )
+
     score = 1.0
     findings: list[str] = []
-    blocked = False
-
-    # Sentinel check
-    if sentinel_flagged and policy.sentinel_block_suspicious:
-        score = 0.0
-        findings.append("Sentinel flagged content as suspicious")
-        blocked = True
 
     # PII check
     if pii_found:
@@ -263,21 +266,20 @@ def score_action(
             score = min(score, 0.9)
             findings.append("PII detected — annotated only")
 
-    # Audit check
-    if not audit_logged and policy.audit_enabled:
-        score = min(score, 0.5)
-        findings.append("Action not logged to audit trail")
-
-    # Encryption check
-    if policy.requires_encryption_at_rest:
-        score = min(score, 0.95)  # Slight deduction until verified
-
-    # High-risk actions
+    # [I2 fix] Consolidated audit check (generic + high-risk in one block)
     high_risk = {"execute", "delete", "write_file", "edit_file"}
-    if action in high_risk and policy.framework != ComplianceFramework.NONE:
-        if not audit_logged:
+    if not audit_logged and policy.audit_enabled:
+        if action in high_risk and policy.framework != ComplianceFramework.NONE:
             score = min(score, 0.4)
-            findings.append(f"High-risk action '{action}' without audit log")
+            findings.append(f"High-risk action '{action}' not logged to audit trail")
+        else:
+            score = min(score, 0.5)
+            findings.append("Action not logged to audit trail")
+
+    # [I1 fix] Encryption check now generates a finding
+    if policy.requires_encryption_at_rest:
+        score = min(score, 0.95)
+        findings.append("Encryption at rest required — score capped until verified")
 
     if not findings:
         findings.append("All compliance checks passed")
@@ -287,5 +289,5 @@ def score_action(
         framework=policy.framework,
         action=action,
         findings=findings,
-        blocked=blocked,
+        blocked=False,
     )
