@@ -1069,6 +1069,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "deepagents" },
+    { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-nvidia-ai-endpoints" },
     { name = "numpy" },
@@ -1086,6 +1087,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "deepagents", specifier = ">=0.4.11,<0.5" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain", specifier = ">=0.3" },
     { name = "langchain-nvidia-ai-endpoints", specifier = ">=0.3" },
     { name = "numpy", specifier = ">=2.4.3" },

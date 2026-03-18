@@ -1,9 +1,7 @@
-"""Custom tools for OpenAgent — brainiac knowledge graph integration.
+"""Custom tools for OpenAgent — dual memory system.
 
-These tools give the agent the ability to:
-- Search persistent memory for relevant patterns, solutions, decisions
-- Save new learnings after completing tasks
-- Check what knowledge is available
+Brainiac tools: cross-project knowledge graph (patterns, solutions, decisions)
+LCM tools: per-session secure memory (encrypted, PII-aware, sentinel-protected, audit-trailed)
 """
 
 from __future__ import annotations
@@ -115,3 +113,118 @@ def memory_stats() -> str:
             lines.append(f"  {nid}: {conns} connections")
 
     return "\n".join(lines)
+
+
+# ─── LCM Secure Memory Tools ─────────────────────────────────
+
+
+def _get_lcm_client():
+    """Lazy-init LCM client."""
+    try:
+        from openagent.lcm_client import LcmClient, _is_lcm_running
+
+        if not _is_lcm_running():
+            return None
+        return LcmClient()
+    except Exception:
+        return None
+
+
+@tool
+def secure_store(
+    content: Annotated[str, "Message content to store securely"],
+    role: Annotated[str, "Message role: user, assistant, tool, or system"] = "assistant",
+    conversation_id: Annotated[str, "Conversation identifier"] = "default",
+) -> str:
+    """Store a message in the encrypted, sentinel-protected LCM memory.
+
+    Content is automatically:
+    - Scanned by sentinel for prompt injection/exfiltration attempts
+    - Checked for PII (emails, phone numbers, SSNs, API keys, etc.)
+    - Compressed and topic-segmented
+    - Stored with encryption at rest
+    - Logged to tamper-proof audit trail
+
+    Use this to persist important conversation context securely.
+    """
+    client = _get_lcm_client()
+    if not client:
+        return "LCM secure memory not available (server not running)."
+
+    try:
+        result = client.ingest(content, role=role, conversation_id=conversation_id)
+        pii = "PII detected" if result.get("piiDetected") else "No PII"
+        sentinel = "Sentinel cleared" if result.get("sentinelCleared") else "BLOCKED by sentinel"
+        return f"Stored securely. {sentinel}. {pii}."
+    except Exception as e:
+        if "403" in str(e):
+            return "BLOCKED by sentinel: content flagged as unsafe."
+        return f"Error: {e}"
+
+
+@tool
+def secure_search(
+    query: Annotated[str, "Search query for conversation history"],
+    conversation_id: Annotated[str | None, "Filter to specific conversation"] = None,
+    limit: Annotated[int, "Maximum results"] = 10,
+) -> str:
+    """Search past conversations in the encrypted LCM memory.
+
+    Supports full-text search across all stored messages.
+    Results are PII-aware and access-controlled via RBAC.
+    """
+    client = _get_lcm_client()
+    if not client:
+        return "LCM secure memory not available (server not running)."
+
+    try:
+        results = client.search(query, conversation_id=conversation_id, limit=limit)
+        if not results:
+            return "No matching messages found."
+
+        lines = [f"Found {len(results)} results:"]
+        for r in results:
+            msg = r.get("message", r)
+            lines.append(f"  [{msg.get('role', '?')}] {msg.get('content', '')[:200]}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Search error: {e}"
+
+
+@tool
+def audit_trail(
+    limit: Annotated[int, "Maximum audit entries to return"] = 20,
+) -> str:
+    """Query the tamper-proof audit trail from LCM secure memory.
+
+    Returns cryptographically hash-chained audit entries showing:
+    - Every message stored, searched, or deleted
+    - Every sentinel block or flag
+    - Every RBAC check (success or failure)
+    - Chain integrity verification status
+
+    Use this for compliance reporting and security review.
+    """
+    client = _get_lcm_client()
+    if not client:
+        return "LCM secure memory not available (server not running)."
+
+    try:
+        data = client.audit(limit=limit)
+        chain = data.get("chain", {})
+        entries = data.get("entries", [])
+
+        lines = [
+            f"Audit Trail: {data.get('count', 0)} entries",
+            f"Chain Integrity: {'VALID' if chain.get('valid') else 'BROKEN'}",
+            "",
+        ]
+        for e in entries[-10:]:  # Show last 10
+            ts = e.get("timestamp", "?")[:19]
+            typ = e.get("type", "?")
+            out = e.get("outcome", "?")
+            lines.append(f"  [{ts}] {typ} -> {out}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Audit error: {e}"

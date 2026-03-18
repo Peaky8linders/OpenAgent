@@ -10,7 +10,14 @@ from openagent.backend import create_backend
 from openagent.config import OpenAgentConfig
 from openagent.memory import get_context_for_task
 from openagent.model import create_model
-from openagent.tools import memory_save, memory_search, memory_stats
+from openagent.tools import (
+    audit_trail,
+    memory_save,
+    memory_search,
+    memory_stats,
+    secure_search,
+    secure_store,
+)
 
 SYSTEM_PROMPT = """\
 You are {name} v{version} — a private coding agent running on a fully open-source stack.
@@ -27,11 +34,18 @@ sandbox with deny-by-default network, filesystem, and process controls.
 - Spawn sub-agents for parallel workstreams when it helps.
 - Be concise. Don't narrate — just do.
 
-## Persistent Memory
-You have access to a knowledge graph that persists across sessions and projects.
-Use `memory_search` at the start of tasks to check for relevant patterns and solutions.
-Use `memory_save` when you discover reusable knowledge (patterns, solutions, decisions).
-Knowledge types: pattern, antipattern, workflow, hypothesis, solution, decision.
+## Dual Memory System
+You have two memory systems:
+
+### Brainiac (cross-project knowledge graph)
+Use `memory_search` to check for patterns, solutions, and decisions from past sessions.
+Use `memory_save` to record reusable knowledge (pattern, antipattern, etc.).
+
+### LCM Secure Memory (per-session encrypted store)
+Use `secure_store` to persist context with encryption, PII detection, and sentinel.
+Use `secure_search` to search past conversations.
+Use `audit_trail` to view the tamper-proof compliance audit chain.
+LCM memory is HIPAA/SOC 2 ready: encrypted at rest, PII auto-detected, all access logged.
 {knowledge_context}"""
 
 
@@ -85,7 +99,10 @@ def create_openagent(
 
     return create_deep_agent(
         model=model,
-        tools=[memory_search, memory_save, memory_stats],
+        tools=[
+            memory_search, memory_save, memory_stats,  # Brainiac
+            secure_store, secure_search, audit_trail,   # LCM
+        ],
         backend=backend,
         system_prompt=build_system_prompt(config, task=task),
         checkpointer=checkpointer,
