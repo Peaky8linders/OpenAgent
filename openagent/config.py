@@ -61,6 +61,7 @@ class OpenAgentConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     harness: HarnessConfig = Field(default_factory=HarnessConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    compliance: str = "none"  # hipaa, soc2, pci, gdpr, none
 
 
 def load_config(path: str | Path = "config/agent-config.yaml") -> OpenAgentConfig:
