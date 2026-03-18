@@ -1,0 +1,43 @@
+# OpenShell sandbox policy for private coding agent
+# Restricts the agent to workspace + inference API only
+
+network:
+  default: deny
+  allow:
+    # NVIDIA inference API (Nemotron 3 Super)
+    - host: "integrate.api.nvidia.com"
+      methods: ["POST"]
+    - host: "api.nvidia.com"
+      methods: ["POST", "GET"]
+    # build.nvidia.com for model access
+    - host: "build.nvidia.com"
+      methods: ["POST", "GET"]
+    # PyPI for package installs inside sandbox
+    - host: "pypi.org"
+      methods: ["GET"]
+    - host: "files.pythonhosted.org"
+      methods: ["GET"]
+
+filesystem:
+  allow:
+    - path: "/sandbox/workspace"
+      access: "read-write"
+    - path: "/tmp"
+      access: "read-write"
+    - path: "/sandbox/.cache"
+      access: "read-write"
+  deny:
+    - path: "/etc/shadow"
+    - path: "/root/.ssh"
+    - path: "/sandbox/.env"
+      access: "write"  # can read env but not overwrite
+
+process:
+  deny:
+    - privilege_escalation: true
+    - dangerous_syscalls: true
+
+inference:
+  provider: "nvidia"
+  model: "nvidia/nemotron-3-super"
+  route: "cloud"  # cloud API, not local

@@ -1,0 +1,31 @@
+# OpenAgent configuration
+# Private coding agent using the open stack
+
+agent:
+  name: "OpenAgent"
+  version: "0.1.0"
+  description: "Private coding agent: Nemotron + OpenShell + DeepAgents"
+
+model:
+  provider: "nvidia"
+  name: "nvidia/nemotron-3-super"
+  api_base: "https://integrate.api.nvidia.com/v1"
+  context_window: 1000000  # 1M tokens
+  temperature: 0.1
+  # API key loaded from NVIDIA_API_KEY env var
+
+harness:
+  framework: "deepagents"
+  features:
+    planning: true
+    filesystem: true
+    subagents: true
+    code_execution: true
+    long_term_memory: true
+    human_in_the_loop: true
+
+runtime:
+  sandbox: "openshell"
+  policy: "config/sandbox-policy.yaml"
+  gpu: false  # cloud inference, no local GPU needed
+  isolation: "container"

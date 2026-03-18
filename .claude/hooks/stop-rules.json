@@ -1,0 +1,58 @@
+{
+  "isolation_rules": [
+    {
+      "subsystem": "gtm",
+      "forbidden_imports": [
+        "from app.engines",
+        "from app.data.kb",
+        "from compliance_modules",
+        "import app.engines",
+        "import app.data.kb"
+      ]
+    },
+    {
+      "subsystem": "engine",
+      "forbidden_imports": [
+        "from app.gtm",
+        "import app.gtm"
+      ]
+    }
+  ],
+  "deprecated_patterns": [
+    {
+      "regex": "\\bschema_extra\\b",
+      "message": "Uses schema_extra (Pydantic v1) — use model_config instead",
+      "subsystems": ["models", "engine"]
+    },
+    {
+      "regex": "\\borm_mode\\b",
+      "message": "Uses orm_mode (Pydantic v1) — use from_attributes instead",
+      "subsystems": ["models", "engine"]
+    },
+    {
+      "regex": "@validator\\b",
+      "message": "Uses @validator (Pydantic v1) — use @field_validator instead",
+      "subsystems": ["models", "engine"]
+    },
+    {
+      "regex": "\\.dict\\(\\)",
+      "message": "Uses .dict() (Pydantic v1) — use .model_dump() instead",
+      "subsystems": ["models", "engine"]
+    },
+    {
+      "regex": "\\.parse_obj\\(",
+      "message": "Uses .parse_obj() (Pydantic v1) — use .model_validate() instead",
+      "subsystems": ["models", "engine"]
+    }
+  ],
+  "subsystem_reminders": [
+    {
+      "subsystem": "kb",
+      "message": "KB MODIFIED: app/data/kb.py was changed. Run `/compliance-check` to verify roadmap and test sync."
+    },
+    {
+      "subsystem": "models",
+      "message": "MODELS CHANGED: app/models.py was updated. Verify Pydantic v2 patterns and run `/test`."
+    }
+  ]
+}

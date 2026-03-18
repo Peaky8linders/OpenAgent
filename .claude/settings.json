@@ -1,0 +1,70 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/shared-hooks/scripts/pre-compact.py\"",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/shared-hooks/scripts/skill-activation.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/shared-hooks/scripts/post-edit-tracker.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/shared-hooks/scripts/post-test.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/shared-hooks/scripts/stop-check.py\"",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/shared-hooks/scripts/error-reminder.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/shared-hooks/scripts/session-learner.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

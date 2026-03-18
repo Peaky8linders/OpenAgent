@@ -1,0 +1,25 @@
+{
+  "rules": [
+    {"pattern": "app/data/kb.py", "subsystem": "kb"},
+    {"pattern": "app/models.py", "subsystem": "models"},
+    {"pattern": "app/config.py", "subsystem": "config"},
+    {"pattern": "app/auth.py", "subsystem": "auth"},
+    {"pattern": "app/main.py", "subsystem": "api"},
+    {"pattern": "app/engines/", "subsystem": "engine"},
+    {"pattern": "app/gtm/", "subsystem": "gtm"},
+    {"pattern": "app/evidence/", "subsystem": "evidence"},
+    {"pattern": "app/monitoring/", "subsystem": "monitoring"},
+    {"pattern": "app/integrations/", "subsystem": "integrations"},
+    {"pattern": "app/core/", "subsystem": "core"},
+    {"pattern": "compliance_modules/shared/", "subsystem": "compliance-shared"},
+    {"pattern": "compliance_modules/", "subsystem": "compliance-module"},
+    {"pattern": "tests/", "subsystem": "test"},
+    {"pattern": "frontend/src/components/", "subsystem": "component"},
+    {"pattern": "frontend/src/pages/", "subsystem": "page"},
+    {"pattern": "frontend/src/api/", "subsystem": "frontend-api"},
+    {"pattern": "frontend/src/", "subsystem": "frontend"},
+    {"pattern": "claude-legal-integration/", "subsystem": "plugin"},
+    {"pattern": ".claude/", "subsystem": "claude-config"},
+    {"pattern": ".github/", "subsystem": "ci"}
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "version": "1.0",
+  "skills": [
+    {
+      "name": "compliance-audit",
+      "type": "domain",
+      "enforcement": "suggest",
+      "command": "/compliance-audit",
+      "promptTriggers": {
+        "keywords": ["compliance", "audit", "EU AI Act", "regulation", "article", "annex", "risk level", "high-risk"],
+        "intentPatterns": ["(check|verify|validate|assess)\\s+(compliance|regulation)", "AI\\s+Act", "2024/1689"]
+      }
+    },
+    {
+      "name": "deep-code-review",
+      "type": "domain",
+      "enforcement": "suggest",
+      "command": "/deep-code-review",
+      "promptTriggers": {
+        "keywords": ["review", "code review", "PR", "pull request", "bug hunt", "deep review"],
+        "intentPatterns": ["review\\s+(the|my|this|current)\\s+(code|changes|branch|PR)", "find\\s+bugs"]
+      }
+    },
+    {
+      "name": "kb-update",
+      "type": "domain",
+      "enforcement": "suggest",
+      "command": "/kb-update",
+      "promptTriggers": {
+        "keywords": ["KB", "knowledge base", "dimension", "add question", "add dimension", "kb.py"],
+        "intentPatterns": ["(add|update|modify|change)\\s+(KB|knowledge\\s+base|dimension|question)"]
+      }
+    },
+    {
+      "name": "test-suite",
+      "type": "domain",
+      "enforcement": "suggest",
+      "command": "/test",
+      "promptTriggers": {
+        "keywords": ["run tests", "test suite", "pytest", "599 tests", "run the tests"],
+        "intentPatterns": ["run\\s+(the\\s+)?(full\\s+)?tests?", "pytest"]
+      }
+    },
+    {
+      "name": "deploy-check",
+      "type": "domain",
+      "enforcement": "suggest",
+      "command": "/deploy-check",
+      "promptTriggers": {
+        "keywords": ["deploy", "release", "production", "ship", "push to prod", "deployment"],
+        "intentPatterns": ["(deploy|release|ship|push)\\s+(to\\s+)?(prod|production|staging)"]
+      }
+    },
+    {
+      "name": "gtm-isolation",
+      "type": "guardrail",
+      "enforcement": "warn",
+      "message": "GTM module is isolated from compliance. Never import from app/engines/, app/data/kb.py, or compliance_modules/. GTM can only import from app/models.py for shared Pydantic types.",
+      "promptTriggers": {
+        "keywords": ["GTM", "go-to-market", "marketing", "sales workflow"],
+        "intentPatterns": ["(edit|modify|change|update)\\s+(GTM|go.to.market)"]
+      }
+    },
+    {
+      "name": "pydantic-v2-guardrail",
+      "type": "guardrail",
+      "enforcement": "block",
+      "message": "This project uses Pydantic v2 ONLY. Do NOT use: @validator (use @field_validator), schema_extra (use model_config), orm_mode (use from_attributes), .dict() (use .model_dump()), .parse_obj() (use .model_validate()).",
+      "promptTriggers": {
+        "keywords": ["Pydantic v1", "validator", "schema_extra", "orm_mode", ".dict()", "parse_obj"],
+        "intentPatterns": ["pydantic\\s+v1", "@validator\\b"]
+      }
+    },
+    {
+      "name": "compliance-check",
+      "type": "domain",
+      "enforcement": "suggest",
+      "command": "/compliance-check",
+      "promptTriggers": {
+        "keywords": ["integrity", "consistency", "KB sync", "roadmap sync"],
+        "intentPatterns": ["(check|verify|validate)\\s+(integrity|consistency)", "KB.*roadmap.*sync"]
+      }
+    }
+  ]
+}
