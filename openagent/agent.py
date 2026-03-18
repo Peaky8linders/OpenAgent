@@ -7,6 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from openagent.backend import create_backend
+from openagent.compliance import get_policy
 from openagent.config import OpenAgentConfig
 from openagent.memory import get_context_for_task
 from openagent.model import create_model
@@ -46,11 +47,45 @@ Use `secure_store` to persist context with encryption, PII detection, and sentin
 Use `secure_search` to search past conversations.
 Use `audit_trail` to view the tamper-proof compliance audit chain.
 LCM memory is HIPAA/SOC 2 ready: encrypted at rest, PII auto-detected, all access logged.
-{knowledge_context}"""
+{compliance_context}{knowledge_context}"""
+
+
+def _build_compliance_context(config: OpenAgentConfig) -> str:
+    """Build compliance rules for the system prompt."""
+    if config.compliance == "none":
+        return ""
+
+    policy = get_policy(config.compliance)
+    lines = [
+        f"\n\n## Active Compliance: {policy.framework.value.upper()}",
+        f"{policy.description}",
+        "",
+        "**MANDATORY RULES — violations are logged and may be blocked:**",
+    ]
+
+    if policy.pii_handling.value != "annotate":
+        lines.append(f"- PII handling: {policy.pii_handling.value}")
+    if policy.pii_types_blocked:
+        lines.append(
+            f"- NEVER output these PII types: {', '.join(policy.pii_types_blocked)}"
+        )
+    if policy.requires_baa:
+        lines.append("- BAA required for all third-party data processors")
+    if policy.requires_encryption_at_rest:
+        lines.append("- All data must be encrypted at rest")
+    if policy.network_loopback_only:
+        lines.append("- Network: loopback only (no external connections)")
+    lines.append("- All actions are logged to tamper-proof audit trail")
+    lines.append(f"- Audit retention: {policy.audit_retention_days} days")
+    lines.append(
+        "- Use `audit_trail` to verify compliance before completing tasks"
+    )
+
+    return "\n".join(lines)
 
 
 def build_system_prompt(config: OpenAgentConfig, task: str | None = None) -> str:
-    """Build the system prompt from config, optionally with task-relevant knowledge.
+    """Build the system prompt from config with compliance and knowledge context.
 
     Args:
         config: Agent configuration.
@@ -59,16 +94,19 @@ def build_system_prompt(config: OpenAgentConfig, task: str | None = None) -> str
     Returns:
         Formatted system prompt string.
     """
-    context = ""
+    knowledge = ""
     if task:
         ctx = get_context_for_task(task, max_items=3)
         if ctx:
-            context = f"\n\n{ctx}"
+            knowledge = f"\n\n{ctx}"
+
+    compliance = _build_compliance_context(config)
 
     return SYSTEM_PROMPT.format(
         name=config.agent.name,
         version=config.agent.version,
-        knowledge_context=context,
+        compliance_context=compliance,
+        knowledge_context=knowledge,
     )
 
 
