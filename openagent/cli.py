@@ -47,7 +47,7 @@ def run_task(
 ) -> None:
     """Run a single task and exit."""
     config = load_config(config_path)
-    config.compliance = compliance
+    config = config.model_copy(update={"compliance": compliance})
     agent = create_openagent(config, task=task)
     thread_id = str(uuid.uuid4())
 
@@ -61,7 +61,7 @@ def run_task(
 def run_interactive(config_path: str, compliance: str = "none") -> None:
     """Run the interactive REPL."""
     config = load_config(config_path)
-    config.compliance = compliance
+    config = config.model_copy(update={"compliance": compliance})
     agent = create_openagent(config)
     thread_id = str(uuid.uuid4())
 

@@ -8,6 +8,7 @@ and network restrictions appropriate for the regulatory framework.
 from __future__ import annotations
 
 from enum import StrEnum
+from types import MappingProxyType
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +33,8 @@ class PiiHandling(StrEnum):
 
 class CompliancePolicy(BaseModel):
     """A compliance policy pack with rules and thresholds."""
+
+    model_config = {"frozen": True}
 
     framework: ComplianceFramework
     description: str
@@ -176,13 +179,13 @@ NONE_POLICY = CompliancePolicy(
 )
 
 
-POLICY_PACKS: dict[ComplianceFramework, CompliancePolicy] = {
+POLICY_PACKS: MappingProxyType[ComplianceFramework, CompliancePolicy] = MappingProxyType({
     ComplianceFramework.HIPAA: HIPAA_POLICY,
     ComplianceFramework.SOC2: SOC2_POLICY,
     ComplianceFramework.PCI_DSS: PCI_DSS_POLICY,
     ComplianceFramework.GDPR: GDPR_POLICY,
     ComplianceFramework.NONE: NONE_POLICY,
-}
+})
 
 
 def get_policy(framework: str | ComplianceFramework) -> CompliancePolicy:
