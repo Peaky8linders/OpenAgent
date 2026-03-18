@@ -72,3 +72,14 @@ class TestOpenAgentConfig:
         assert config.agent.name == "MyAgent"
         assert config.model.temperature == 0.5
         assert config.runtime.sandbox == "openshell"  # default
+
+    def test_invalid_compliance_rejected(self) -> None:
+        """YAML with invalid compliance value should fail at load time."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            OpenAgentConfig.model_validate({"compliance": "foobar"})
+
+    def test_valid_compliance_accepted(self) -> None:
+        config = OpenAgentConfig.model_validate({"compliance": "hipaa"})
+        assert config.compliance == "hipaa"

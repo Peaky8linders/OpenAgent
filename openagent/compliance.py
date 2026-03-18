@@ -200,8 +200,16 @@ def get_policy(framework: str | ComplianceFramework) -> CompliancePolicy:
     Raises:
         ValueError: If framework is not recognized.
     """
+    if not framework:
+        raise ValueError("Compliance framework must not be None or empty")
     if isinstance(framework, str):
-        framework = ComplianceFramework(framework.lower())
+        try:
+            framework = ComplianceFramework(framework.lower())
+        except ValueError as exc:
+            valid = ", ".join(f.value for f in ComplianceFramework)
+            raise ValueError(
+                f"Unknown framework: {framework!r}. Valid: {valid}"
+            ) from exc
     if framework not in POLICY_PACKS:
         valid = ", ".join(f.value for f in ComplianceFramework)
         raise ValueError(f"Unknown framework: {framework}. Valid: {valid}")
@@ -256,12 +264,14 @@ def score_action(
 
     score = 1.0
     findings: list[str] = []
+    blocked = False
 
     # PII check
     if pii_found:
         if policy.pii_handling == PiiHandling.REDACT_ALL:
             score = min(score, 0.3)
             findings.append("PII detected — requires full redaction")
+            blocked = True  # Hard block: REDACT_ALL means PII must not pass
         elif policy.pii_handling == PiiHandling.REDACT_SUMMARIES:
             score = min(score, 0.7)
             findings.append("PII detected — redaction in summaries required")
@@ -292,5 +302,5 @@ def score_action(
         framework=policy.framework,
         action=action,
         findings=findings,
-        blocked=False,
+        blocked=blocked,
     )

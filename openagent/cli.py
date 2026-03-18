@@ -19,10 +19,13 @@ def _print_banner(config_path: str, compliance: str = "none") -> None:
     print("Model: Nemotron 3 Super | Runtime: OpenShell | Harness: DeepAgents")
     print(f"Config: {config_path}")
 
-    if compliance != "none":
-        policy = get_policy(compliance)
-        print(f"\033[33mCompliance: {policy.framework.value.upper()}"
-              f" — {policy.description}\033[0m")
+    if compliance and compliance != "none":
+        try:
+            policy = get_policy(compliance)
+            print(f"\033[33mCompliance: {policy.framework.value.upper()}"
+                  f" — {policy.description}\033[0m")
+        except ValueError as e:
+            print(f"\033[31mCompliance error: {e}\033[0m")
 
     stats = graph_stats()
     if stats:
@@ -43,11 +46,12 @@ def _extract_reply(result: dict) -> str:
 
 
 def run_task(
-    config_path: str, task: str, compliance: str = "none",
+    config_path: str, task: str, compliance: str | None = None,
 ) -> None:
     """Run a single task and exit."""
     config = load_config(config_path)
-    config = config.model_copy(update={"compliance": compliance})
+    if compliance is not None:
+        config = config.model_copy(update={"compliance": compliance})
     agent = create_openagent(config, task=task)
     thread_id = str(uuid.uuid4())
 
@@ -58,14 +62,15 @@ def run_task(
     print(_extract_reply(result))
 
 
-def run_interactive(config_path: str, compliance: str = "none") -> None:
+def run_interactive(config_path: str, compliance: str | None = None) -> None:
     """Run the interactive REPL."""
     config = load_config(config_path)
-    config = config.model_copy(update={"compliance": compliance})
+    if compliance is not None:
+        config = config.model_copy(update={"compliance": compliance})
     agent = create_openagent(config)
     thread_id = str(uuid.uuid4())
 
-    _print_banner(config_path, compliance)
+    _print_banner(config_path, config.compliance)
 
     while True:
         try:
@@ -120,9 +125,9 @@ def main() -> None:
     parser.add_argument(
         "--compliance",
         type=str,
-        default="none",
+        default=None,
         choices=["none", "hipaa", "soc2", "pci", "gdpr"],
-        help="Compliance mode (default: none)",
+        help="Compliance mode (overrides YAML config if set)",
     )
     args = parser.parse_args()
 
