@@ -9,6 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 from openagent.backend import create_backend
 from openagent.compliance import check_sandbox_required, get_policy
 from openagent.config import OpenAgentConfig
+from openagent.contract_tools import review_contract, scan_document_pii
 from openagent.memory import get_context_for_task
 from openagent.model import create_model
 from openagent.tools import (
@@ -147,8 +148,9 @@ def create_openagent(
     return create_deep_agent(
         model=model,
         tools=[
-            memory_search, memory_save, memory_stats,  # Brainiac
-            secure_store, secure_search, audit_trail,   # LCM
+            memory_search, memory_save, memory_stats,   # Brainiac
+            secure_store, secure_search, audit_trail,    # LCM
+            review_contract, scan_document_pii,          # Contract review
         ],
         backend=backend,
         system_prompt=build_system_prompt(config, task=task),

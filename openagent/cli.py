@@ -129,7 +129,39 @@ def main() -> None:
         choices=["none", "hipaa", "soc2", "pci", "gdpr"],
         help="Compliance mode (overrides YAML config if set)",
     )
+    parser.add_argument(
+        "--airgap",
+        action="store_true",
+        help="Air-gap mode: use local Ollama LLM, zero outbound network",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="qwen3:32b",
+        help="Ollama model for air-gap mode (default: qwen3:32b)",
+    )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Start compliance dashboard API on port 3200",
+    )
     args = parser.parse_args()
+
+    # Start dashboard if requested
+    if args.dashboard:
+        import threading
+
+        from openagent.dashboard import start_dashboard
+
+        dashboard = start_dashboard(port=3200)
+        threading.Thread(target=dashboard.serve_forever, daemon=True).start()
+        print("Dashboard: http://127.0.0.1:3200/dashboard/summary")
+
+    # Air-gap mode banner
+    if args.airgap:
+        from openagent.airgap import print_airgap_banner
+
+        print_airgap_banner(args.model)
 
     if args.task:
         run_task(args.config, args.task, args.compliance)
