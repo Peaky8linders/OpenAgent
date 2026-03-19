@@ -72,12 +72,23 @@ def start_lcm_server() -> subprocess.Popen | None:
 
 
 class LcmClient:
-    """Async client for the LCM v2 HTTP API."""
+    """Client for the LCM v2 HTTP API with optional Bearer auth."""
 
-    def __init__(self, base_url: str | None = None, timeout: float = 10.0):
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout: float = 10.0,
+        api_key: str | None = None,
+    ):
         self.base_url = base_url or _lcm_base_url()
         self.timeout = timeout
-        self._client = httpx.Client(base_url=self.base_url, timeout=timeout)
+        headers = {}
+        key = api_key or os.environ.get("LCM_API_KEY", "")
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        self._client = httpx.Client(
+            base_url=self.base_url, timeout=timeout, headers=headers,
+        )
 
     def health(self) -> dict[str, Any]:
         """Check server health and audit chain integrity."""
