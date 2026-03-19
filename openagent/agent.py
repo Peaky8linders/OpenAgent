@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from openagent.backend import create_backend
-from openagent.compliance import get_policy
+from openagent.compliance import check_sandbox_required, get_policy
 from openagent.config import OpenAgentConfig
 from openagent.memory import get_context_for_task
 from openagent.model import create_model
@@ -140,6 +140,7 @@ def create_openagent(
     if config.compliance != "none":
         policy = get_policy(config.compliance)
         set_active_policy(policy)
+        check_sandbox_required(policy)
     else:
         set_active_policy(None)
 

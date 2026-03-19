@@ -205,4 +205,35 @@ export const PG_MIGRATIONS: PgMigration[] = [
       ALTER TABLE audit_log DISABLE ROW LEVEL SECURITY;
     `,
   },
+  // ─── Version 5: Tamper-proof hash-chained audit ledger ────
+  {
+    version: 5,
+    description: 'Secure audit ledger with SHA-256 hash chain for compliance',
+    up: `
+      CREATE TABLE IF NOT EXISTS secure_audit_ledger (
+        id UUID PRIMARY KEY,
+        sequence_number BIGINT UNIQUE NOT NULL,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        type TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT 'system',
+        action TEXT NOT NULL,
+        target TEXT NOT NULL DEFAULT '',
+        previous_hash TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        details JSONB NOT NULL DEFAULT '{}'::jsonb,
+        outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure', 'blocked'))
+      );
+
+      CREATE INDEX idx_sal_sequence ON secure_audit_ledger(sequence_number);
+      CREATE INDEX idx_sal_timestamp ON secure_audit_ledger(timestamp DESC);
+      CREATE INDEX idx_sal_user ON secure_audit_ledger(user_id, timestamp DESC);
+
+      ALTER TABLE secure_audit_ledger ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY sal_default ON secure_audit_ledger FOR ALL USING (TRUE);
+    `,
+    down: `
+      DROP POLICY IF EXISTS sal_default ON secure_audit_ledger;
+      DROP TABLE IF EXISTS secure_audit_ledger;
+    `,
+  },
 ];
