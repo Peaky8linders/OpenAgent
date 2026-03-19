@@ -13,8 +13,10 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { createStore } from './src/store/factory.js';
 import { SqliteStore } from './src/store/sqlite-store.js';
 import { SecureStore, type SecureUser, type SentinelInspector, type AuditLedgerWriter, type SecureAuditEntry, type InspectionResult } from './src/secure/secure-store.js';
+import { PgAuditLedger } from './src/secure/pg-audit-ledger.js';
 import { SecureIngestionPipeline } from './src/secure/secure-pipeline.js';
 import { MockEmbeddingGenerator } from './src/ingestion/embedding-generator.js';
 import type { RawMessage, SearchQuery } from './src/types/index.js';
@@ -162,23 +164,41 @@ function checkAuth(req: IncomingMessage, res: ServerResponse): boolean {
 }
 
 async function main() {
-  // Initialize store stack
-  const sqlitePath = process.env.LCM_SQLITE_PATH ?? ':memory:';
-  const innerStore = new SqliteStore({ path: sqlitePath });
-  await innerStore.initialize();
+  // Initialize store — PostgreSQL (production) or SQLite (dev/test)
+  const driver = (process.env.LCM_STORE_DRIVER ?? 'sqlite') as 'sqlite' | 'postgres';
+  const innerStore = await createStore({
+    driver,
+    path: process.env.LCM_SQLITE_PATH ?? ':memory:',
+    connectionString: process.env.DATABASE_URL,
+    maxConnections: parseInt(process.env.LCM_PG_MAX_CONNECTIONS ?? '10', 10),
+  });
 
   const sentinel = new BasicSentinel();
-  const audit = new BasicAuditLedger();
+
+  // Audit ledger: PostgreSQL (persistent) or in-memory (dev)
+  let audit: AuditLedgerWriter & { getEntries(limit?: number): SecureAuditEntry[]; getEntriesAsync?(limit?: number): Promise<SecureAuditEntry[]>; verifyChainAsync?(): Promise<{ valid: boolean; brokenAt?: number; reason?: string; totalEntries?: number }> };
+  if (driver === 'postgres' && process.env.DATABASE_URL) {
+    const pg = await import('pg');
+    const pool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL });
+    const pgAudit = new PgAuditLedger(pool);
+    await pgAudit.initialize();
+    audit = pgAudit;
+  } else {
+    audit = new BasicAuditLedger();
+  }
+
   const adminUser: SecureUser = { id: 'system', role: 'admin' };
   const store = new SecureStore(innerStore, adminUser, sentinel, audit);
-  await store.initialize();
+  // Skip initialize for PG — createStore already called it
+  if (driver === 'sqlite') await store.initialize();
 
   const embedGen = new MockEmbeddingGenerator();
   const pipeline = new SecureIngestionPipeline(innerStore, embedGen, sentinel, audit);
 
   console.log(`LCM v2 Secure Memory Server starting on port ${PORT}...`);
-  console.log(`Store: SQLite (${sqlitePath})`);
-  console.log(`Sentinel: enabled | Audit: hash-chained | RBAC: enabled`);
+  console.log(`Store: ${driver === 'postgres' ? 'PostgreSQL' : 'SQLite'}`);
+  console.log(`Audit: ${driver === 'postgres' ? 'PostgreSQL (persistent)' : 'in-memory'}`);
+  console.log(`Sentinel: enabled | RBAC: enabled`);
 
   if (API_KEY) {
     console.log('Auth: Bearer token required (LCM_API_KEY set)');
@@ -194,7 +214,9 @@ async function main() {
       // Health check (unauthenticated — used for liveness probes)
       if (path === '/health' && method === 'GET') {
         const health = await store.healthCheck();
-        const chainStatus = audit.verifyChain();
+        const chainStatus = audit.verifyChainAsync
+          ? await audit.verifyChainAsync()
+          : audit.verifyChain();
         return json(res, 200, { ...health, auditChain: chainStatus });
       }
 
@@ -253,8 +275,13 @@ async function main() {
       // Audit trail
       if (path === '/audit' && method === 'GET') {
         const limit = parseInt(params.get('limit') ?? '50', 10);
-        const entries = audit.getEntries(limit);
-        const chainStatus = audit.verifyChain();
+        // Use async methods if available (PgAuditLedger), else sync fallback
+        const entries = audit.getEntriesAsync
+          ? await audit.getEntriesAsync(limit)
+          : audit.getEntries(limit);
+        const chainStatus = audit.verifyChainAsync
+          ? await audit.verifyChainAsync()
+          : audit.verifyChain();
         return json(res, 200, { entries, chain: chainStatus, count: entries.length });
       }
 

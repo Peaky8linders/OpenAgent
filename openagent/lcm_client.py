@@ -53,12 +53,22 @@ def start_lcm_server() -> subprocess.Popen | None:
             capture_output=True,
         )
 
+    # Pass through store driver and database config
+    lcm_env = {
+        **os.environ,
+        "LCM_STORE_DRIVER": os.environ.get("LCM_STORE_DRIVER", "sqlite"),
+        "LCM_SQLITE_PATH": str(LCM_SERVER_DIR / "data" / "lcm.db"),
+    }
+    # Forward DATABASE_URL for PostgreSQL if set
+    if "DATABASE_URL" in os.environ:
+        lcm_env["DATABASE_URL"] = os.environ["DATABASE_URL"]
+
     proc = subprocess.Popen(
         ["node", "dist/server.js"],
         cwd=str(LCM_SERVER_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env={**os.environ, "LCM_SQLITE_PATH": str(LCM_SERVER_DIR / "data" / "lcm.db")},
+        env=lcm_env,
     )
 
     # Wait for server to start

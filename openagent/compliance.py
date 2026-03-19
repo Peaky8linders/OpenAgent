@@ -7,6 +7,8 @@ and network restrictions appropriate for the regulatory framework.
 
 from __future__ import annotations
 
+import os
+import sys
 from enum import StrEnum
 from types import MappingProxyType
 
@@ -214,6 +216,35 @@ def get_policy(framework: str | ComplianceFramework) -> CompliancePolicy:
         valid = ", ".join(f.value for f in ComplianceFramework)
         raise ValueError(f"Unknown framework: {framework}. Valid: {valid}")
     return POLICY_PACKS[framework]
+
+
+# ─── Sandbox Enforcement ──────────────────────────────────────
+
+
+def check_sandbox_required(policy: CompliancePolicy) -> None:
+    """Check if the current environment satisfies the policy's network requirements.
+
+    When `network_loopback_only=True` (HIPAA, PCI-DSS), the agent should
+    run inside an OpenShell sandbox. If no sandbox is detected, emit a
+    prominent warning. This is a defense-in-depth check — the sandbox
+    enforces isolation at the kernel level, not the application layer.
+    """
+    if not policy.network_loopback_only:
+        return
+
+    sandbox_id = os.environ.get("OPENSHELL_SANDBOX_ID")
+    if sandbox_id:
+        return  # Running inside sandbox — good
+
+    framework = policy.framework.value.upper()
+    print(
+        f"\033[31;1m"
+        f"⚠ WARNING: {framework} mode requires network isolation.\n"
+        f"  You are NOT running inside an OpenShell sandbox.\n"
+        f"  Network loopback-only policy is NOT enforced.\n"
+        f"  Run: bash scripts/run-sandbox.sh\033[0m",
+        file=sys.stderr,
+    )
 
 
 # ─── Compliance Scoring ──────────────────────────────────────
