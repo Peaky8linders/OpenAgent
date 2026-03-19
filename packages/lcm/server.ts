@@ -22,19 +22,35 @@ import { createHash } from 'node:crypto';
 
 // ─── Simple Sentinel (pattern-based) ─────────────────────────
 
+/**
+ * Normalize content before sentinel inspection.
+ * Strips zero-width chars and applies NFKC normalization to defeat
+ * Unicode obfuscation attacks (S3 from security review).
+ */
+function normalizeForSentinel(content: string): string {
+  // Strip zero-width characters that break regex word matching
+  const stripped = content.replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD]/g, '');
+  // NFKC normalization: converts homoglyphs and compatibility chars
+  return stripped.normalize('NFKC');
+}
+
 class BasicSentinel implements SentinelInspector {
   private readonly patterns = [
-    { pattern: /ignore\s+(previous|above|all)\s+instructions/i, category: 'prompt_injection', desc: 'Prompt injection attempt detected' },
+    { pattern: /ignore\s*(previous|above|all)\s*instructions/i, category: 'prompt_injection', desc: 'Prompt injection attempt detected' },
     { pattern: /you\s+are\s+now\s+(a|an)\s+/i, category: 'role_hijack', desc: 'Role hijacking attempt detected' },
-    { pattern: /system:\s*override/i, category: 'system_override', desc: 'System override attempt detected' },
+    { pattern: /system\s*:\s*override/i, category: 'system_override', desc: 'System override attempt detected' },
     { pattern: /\b(curl|wget|nc)\s+.*\|\s*(bash|sh)/i, category: 'command_injection', desc: 'Command injection attempt detected' },
     { pattern: /document\.cookie|localStorage\./i, category: 'data_exfiltration', desc: 'Data exfiltration attempt detected' },
+    // Base64-encoded injection detection
+    { pattern: /\b[A-Za-z0-9+/]{40,}={0,2}\b/i, category: 'encoded_payload', desc: 'Possible Base64-encoded payload detected' },
   ];
 
   inspect(content: string): InspectionResult {
     const start = Date.now();
+    // [S3 fix] Normalize Unicode before matching
+    const normalized = normalizeForSentinel(content);
     const findings = this.patterns
-      .filter(p => p.pattern.test(content))
+      .filter(p => p.pattern.test(normalized))
       .map(p => ({ category: p.category, confidence: 0.9, description: p.desc }));
 
     const threatLevel = findings.length > 0 ? 'blocked' as const : 'safe' as const;
@@ -46,11 +62,30 @@ class BasicSentinel implements SentinelInspector {
 
 class BasicAuditLedger implements AuditLedgerWriter {
   private entries: SecureAuditEntry[] = [];
-  private lastHash = '0000000000000000';
+  private lastHash = '0'.repeat(64); // Full SHA-256 genesis hash
+
+  /**
+   * Compute tamper-proof hash over ALL entry fields.
+   * [S6 fix] Full SHA-256 (not truncated), includes all fields.
+   */
+  private computeHash(entry: Omit<SecureAuditEntry, 'hash'>): string {
+    const hashInput = JSON.stringify({
+      seq: entry.sequenceNumber,
+      ts: entry.timestamp,
+      type: entry.type,
+      userId: entry.userId,
+      action: entry.action,
+      target: entry.target,
+      outcome: entry.outcome,
+      details: entry.details,
+      prev: entry.previousHash,
+    });
+    return createHash('sha256').update(hashInput).digest('hex'); // Full 256-bit
+  }
 
   record(event: { type: string; userId?: string; sessionId?: string; details: Record<string, unknown>; outcome: 'success' | 'failure' | 'blocked' }): SecureAuditEntry {
     const seq = this.entries.length;
-    const entry: SecureAuditEntry = {
+    const partial = {
       id: randomUUID(),
       sequenceNumber: seq,
       timestamp: new Date().toISOString(),
@@ -59,22 +94,27 @@ class BasicAuditLedger implements AuditLedgerWriter {
       action: event.type,
       target: (event.details.target as string) ?? '',
       previousHash: this.lastHash,
-      hash: '',
       details: event.details,
       outcome: event.outcome,
     };
 
-    const hashInput = `${entry.sequenceNumber}:${entry.timestamp}:${entry.type}:${entry.previousHash}`;
-    entry = { ...entry, hash: createHash('sha256').update(hashInput).digest('hex').slice(0, 16) };
-    this.lastHash = entry.hash;
+    const hash = this.computeHash(partial);
+    const entry: SecureAuditEntry = { ...partial, hash };
+    this.lastHash = hash;
     this.entries.push(entry);
     return entry;
   }
 
   verifyChain(): { valid: boolean; brokenAt?: number; reason?: string } {
-    let prev = '0000000000000000';
+    let prev = '0'.repeat(64);
     for (const e of this.entries) {
-      if (e.previousHash !== prev) return { valid: false, brokenAt: e.sequenceNumber, reason: 'Hash chain broken' };
+      if (e.previousHash !== prev) {
+        return { valid: false, brokenAt: e.sequenceNumber, reason: 'Previous hash mismatch' };
+      }
+      const expected = this.computeHash({ ...e });
+      if (e.hash !== expected) {
+        return { valid: false, brokenAt: e.sequenceNumber, reason: 'Entry hash tampered' };
+      }
       prev = e.hash;
     }
     return { valid: true };
@@ -106,6 +146,20 @@ function getPath(url: string): { path: string; params: URLSearchParams } {
 // ─── Server ──────────────────────────────────────────────────
 
 const PORT = parseInt(process.env.LCM_PORT ?? '3100', 10);
+const API_KEY = process.env.LCM_API_KEY ?? ''; // Empty = no auth required
+
+/**
+ * [S7 fix] Bearer token authentication.
+ * Returns true if request is authorized, false otherwise.
+ * If LCM_API_KEY is not set, all requests are allowed (dev mode).
+ */
+function checkAuth(req: IncomingMessage, res: ServerResponse): boolean {
+  if (!API_KEY) return true; // No key configured = dev mode
+  const authHeader = req.headers.authorization ?? '';
+  if (authHeader === `Bearer ${API_KEY}`) return true;
+  json(res, 401, { error: 'Unauthorized: invalid or missing Bearer token' });
+  return false;
+}
 
 async function main() {
   // Initialize store stack
@@ -126,17 +180,26 @@ async function main() {
   console.log(`Store: SQLite (${sqlitePath})`);
   console.log(`Sentinel: enabled | Audit: hash-chained | RBAC: enabled`);
 
+  if (API_KEY) {
+    console.log('Auth: Bearer token required (LCM_API_KEY set)');
+  } else {
+    console.log('Auth: DISABLED (set LCM_API_KEY for production)');
+  }
+
   const server = createServer(async (req, res) => {
     const method = req.method ?? 'GET';
     const { path, params } = getPath(req.url ?? '/');
 
     try {
-      // Health check
+      // Health check (unauthenticated — used for liveness probes)
       if (path === '/health' && method === 'GET') {
         const health = await store.healthCheck();
         const chainStatus = audit.verifyChain();
         return json(res, 200, { ...health, auditChain: chainStatus });
       }
+
+      // [S7] All endpoints below require authentication
+      if (!checkAuth(req, res)) return;
 
       // Ingest message
       if (path === '/messages' && method === 'POST') {
@@ -175,10 +238,15 @@ async function main() {
         return json(res, 200, { results, count: results.length });
       }
 
-      // Sentinel inspect
+      // Sentinel inspect (also audited — prevents oracle attacks)
       if (path === '/sentinel/inspect' && method === 'POST') {
         const body = JSON.parse(await readBody(req));
         const result = sentinel.inspect(body.content ?? '');
+        audit.record({
+          type: 'sentinel_inspect',
+          details: { source: 'api', threatLevel: result.threatLevel },
+          outcome: result.threatLevel === 'safe' ? 'success' : 'blocked',
+        });
         return json(res, 200, result);
       }
 

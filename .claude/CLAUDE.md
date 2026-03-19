@@ -1,62 +1,73 @@
-# OpenAgent - Private Coding Agent
+# OpenAgent / VaultClaw — Private Compliance Agent
 
 ## Project Overview
-A fully private coding agent built on Harrison Chase's open stack architecture:
-- **Model**: NVIDIA Nemotron 3 Super (120B params, 12B active, 1M context) via NVIDIA cloud API
-- **Runtime**: NVIDIA OpenShell (sandboxed execution with policy-driven isolation)
-- **Harness**: LangChain DeepAgents (planning, filesystem, sub-agents, code execution)
-- **Memory**: Brainiac knowledge graph (persistent cross-session memory with semantic search)
+A fully private coding agent with compliance-grade security for regulated industries.
+Built on Harrison Chase's open stack + LCM v2 encrypted memory + compliance engine.
+- **Model**: NVIDIA Nemotron 3 Super (120B/12B MoE, 1M context) via cloud API
+- **Runtime**: NVIDIA OpenShell (sandboxed, policy-driven isolation)
+- **Harness**: LangChain DeepAgents 0.4.x (planning, filesystem, sub-agents)
+- **Memory**: Brainiac (cross-project knowledge graph) + LCM v2 (encrypted per-session)
+- **Compliance**: HIPAA, SOC 2, PCI-DSS, GDPR policy packs with sentinel enforcement
+- **Product**: VaultClaw — developer tool → enterprise (open-source core)
 
 ## Architecture
 ```
-┌─────────────────────────────────────────┐
-│  CLI (openagent/cli.py)                 │
-│  Interactive REPL + single-task mode    │
-├─────────────────────────────────────────┤
-│  Agent (openagent/agent.py)             │
-│  create_deep_agent() with:              │
-│  - LocalShellBackend (filesystem+shell) │
-│  - MemorySaver (multi-turn checkpoints) │
-│  - Brainiac tools (search/save/stats)   │
-│  - Auto: todos, subagents, summarize    │
-├─────────────────────────────────────────┤
-│  Memory (openagent/memory.py)           │
-│  Brainiac knowledge graph integration   │
-│  ~/.claude/knowledge/graph/             │
-├─────────────────────────────────────────┤
-│  Model (openagent/model.py)             │
-│  ChatNVIDIA → Nemotron 3 Super          │
-│  Via NVIDIA cloud API                   │
-├─────────────────────────────────────────┤
-│  Config (openagent/config.py)           │
-│  Pydantic v2 YAML-driven config        │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  CLI (openagent/cli.py)                      │
+│  --compliance hipaa|soc2|pci|gdpr|none       │
+├─────────────────────────────────────────────┤
+│  Agent (openagent/agent.py)                  │
+│  DeepAgents + 15 tools + compliance context  │
+├────────────────────┬────────────────────────┤
+│  Brainiac Memory   │  LCM v2 Secure Memory  │
+│  Cross-project     │  Per-session encrypted  │
+│  Knowledge graph   │  RBAC + sentinel + audit│
+├────────────────────┴────────────────────────┤
+│  Compliance Engine (openagent/compliance.py)  │
+│  Frozen policy packs, scoring, enforcement   │
+├─────────────────────────────────────────────┤
+│  Model: ChatNVIDIA → Nemotron 3 Super        │
+│  Config: Pydantic v2 + YAML (Literal-typed)  │
+└─────────────────────────────────────────────┘
 ```
 
 ## Key Files
 - `main.py` — Thin entry point → `openagent.cli.main()`
-- `openagent/cli.py` — Interactive REPL + single-task mode
-- `openagent/agent.py` — Agent factory (wires model + backend + memory + tools)
-- `openagent/config.py` — Pydantic v2 config models + YAML loader
+- `openagent/cli.py` — Interactive REPL + single-task + --compliance flag
+- `openagent/agent.py` — Agent factory (model + backend + memory + compliance)
+- `openagent/compliance.py` — Policy packs, scoring, enforcement (frozen, immutable)
+- `openagent/config.py` — Pydantic v2 config (Literal-validated compliance field)
 - `openagent/model.py` — ChatNVIDIA model factory
 - `openagent/backend.py` — LocalShellBackend factory
 - `openagent/memory.py` — Brainiac knowledge graph integration
-- `openagent/tools.py` — memory_search, memory_save, memory_stats tools
-- `config/agent-config.yaml` — Agent, model, harness, and runtime settings
-- `config/sandbox-policy.yaml` — OpenShell sandbox security policies
-- `scripts/setup-wsl.sh` — OpenShell + NemoClaw installation (Linux/WSL)
-- `scripts/run-sandbox.sh` — Launch agent inside OpenShell sandbox
+- `openagent/tools.py` — 6 custom tools (3 brainiac + 3 LCM) + policy enforcement
+- `openagent/lcm_client.py` — Python HTTP client for LCM server
+- `packages/lcm/` — LCM v2 TypeScript (SecureStore, sentinel, PII, audit chain)
+- `packages/lcm/server.ts` — LCM HTTP server (loopback-only)
+- `config/agent-config.yaml` — Agent + model + compliance config
+- `config/sandbox-policy.yaml` — OpenShell security policies
 
-## Agent Tools (auto-wired by DeepAgents)
+## Agent Tools (15 total)
 | Tool | Source | Purpose |
 |------|--------|---------|
 | `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` | DeepAgents | Filesystem |
 | `execute` | DeepAgents + LocalShellBackend | Shell commands |
 | `write_todos` | DeepAgents | Planning / task tracking |
 | `task` | DeepAgents | Sub-agent spawning |
-| `memory_search` | OpenAgent | Search knowledge graph |
-| `memory_save` | OpenAgent | Save learnings to graph |
-| `memory_stats` | OpenAgent | Graph statistics |
+| `memory_search` | Brainiac | Cross-project knowledge search |
+| `memory_save` | Brainiac | Save learnings to graph |
+| `memory_stats` | Brainiac | Graph statistics |
+| `secure_store` | LCM | Encrypted message storage + policy enforcement |
+| `secure_search` | LCM | PII-aware conversation search |
+| `audit_trail` | LCM | Tamper-proof compliance audit chain |
+
+## Compliance
+- `--compliance hipaa|soc2|pci|gdpr|none` (CLI flag or YAML config)
+- Frozen policy packs (MappingProxyType, model_config frozen)
+- Real-time scoring (0.0-1.0) per agent action
+- PII under REDACT_ALL = hard block (blocked=True)
+- Sentinel extra patterns enforced locally before LCM
+- YAML compliance validated as Literal type at load time
 
 ## Development Rules
 - OpenShell is Linux-only; use WSL or Docker on Windows
