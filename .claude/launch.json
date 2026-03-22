@@ -2,10 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "openagent",
-      "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "python", "main.py"],
-      "port": 0
+      "name": "lcm-server",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\npx.cmd",
+      "runtimeArgs": ["--prefix", "packages/lcm", "tsx", "packages/lcm/server.ts"],
+      "port": 3100,
+      "env": {
+        "LCM_STORE_DRIVER": "sqlite",
+        "LCM_SQLITE_PATH": ":memory:"
+      }
     }
   ]
 }

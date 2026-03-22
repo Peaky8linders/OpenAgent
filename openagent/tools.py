@@ -233,6 +233,146 @@ def secure_search(
 
 
 @tool
+def eval_check(
+    content: Annotated[str, "Content to check for security/compliance issues"],
+    target_content: Annotated[str | None, "Source code to analyze for unsafe patterns"] = None,
+) -> str:
+    """Run L1 security assertions on content before committing.
+
+    Checks for:
+    - PII leakage (emails, SSNs, phone numbers, API keys, etc.)
+    - Cross-tenant data isolation
+    - Unsafe code patterns (eval(), any type, SQL injection)
+    - Store health
+
+    Under active compliance policy, also checks policy-specific patterns
+    (PHI for HIPAA, cardholder data for PCI, credentials for SOC 2, etc.).
+
+    Use BEFORE writing files or returning sensitive content.
+    """
+    # Local policy pattern check first
+    block_reason = _check_policy_patterns(content)
+    if block_reason:
+        return f"BLOCKED: {block_reason}"
+
+    client = _get_lcm_client()
+    if not client:
+        return "LCM not available — running local PII check only."
+
+    try:
+        result = client.run_l1(content, target_content=target_content)
+        if result.get("passed"):
+            count = len(result.get("assertions", []))
+            ms = result.get("totalMs", 0)
+            return f"All {count} security checks passed ({ms}ms)."
+
+        failures = [
+            a for a in result.get("assertions", []) if not a.get("passed")
+        ]
+        lines = [f"FAILED {len(failures)} check(s):"]
+        for f in failures:
+            lines.append(f"  - {f.get('name')}: {f.get('reason', 'no reason')}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Eval error: {e}"
+
+
+@tool
+def eval_quality(
+    input_text: Annotated[str, "What was asked (the task/prompt)"],
+    output_text: Annotated[str, "What was produced (the response/code)"],
+    context: Annotated[str, "Relevant context the agent should have used"] = "",
+) -> str:
+    """Run L2 quality judges on agent work.
+
+    Evaluates for failure modes:
+    - Context loss: did the response use provided context correctly?
+    - Hallucination: does it contain unsupported claims?
+    - Instruction following: did it respect constraints?
+    - PII leakage: does it expose personal information?
+    - Prompt injection: was the agent manipulated?
+
+    Use AFTER completing a task to validate quality.
+    Note: Requires the agent's LLM to score each judge prompt.
+    """
+    client = _get_lcm_client()
+    if not client:
+        return "LCM not available — cannot run quality judges."
+
+    try:
+        judges = client.list_judges()
+        lines = [f"Available judges: {len(judges)}"]
+        for j in judges:
+            lines.append(f"  - {j.get('name')} ({j.get('failureMode')})")
+        lines.append("")
+        lines.append("To run L2 judges, score each judge prompt via your LLM and submit results.")
+        lines.append("Use eval_gate for the full automated pipeline (L1 + metric).")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Eval error: {e}"
+
+
+@tool
+def eval_gate(
+    hypothesis: Annotated[str, "What improvement this change makes"],
+    output: Annotated[str, "The content/code produced"],
+    primary_metric: Annotated[float, "Current quality metric (0.0-1.0)"],
+    baseline_metric: Annotated[float, "Previous baseline metric to beat"],
+    target_content: Annotated[str | None, "Source code to analyze for unsafe patterns"] = None,
+) -> str:
+    """Full eval gate: L1 security checks + metric comparison → commit/revert decision.
+
+    Pipeline:
+    1. L1 hard gates (PII, isolation, unsafe patterns) — any fail = REVERT
+    2. Primary metric comparison — must improve over baseline
+    3. Time budget check
+
+    Returns a COMMIT or REVERT decision with explanation.
+
+    Use BEFORE finalizing multi-step work to validate the overall change.
+    """
+    # Local policy check first
+    block_reason = _check_policy_patterns(output)
+    if block_reason:
+        return f"REVERT: Compliance policy blocked — {block_reason}"
+
+    client = _get_lcm_client()
+    if not client:
+        return "LCM not available — cannot run eval gate."
+
+    try:
+        result = client.run_eval(
+            hypothesis=hypothesis,
+            output=output,
+            primary_metric=primary_metric,
+            baseline_metric=baseline_metric,
+            target_content=target_content,
+        )
+        decision = result.get("decision", "revert").upper()
+        lines = [f"Decision: {decision}"]
+
+        if result.get("revertReason"):
+            lines.append(f"Reason: {result['revertReason']}")
+
+        l1 = result.get("l1", {})
+        l1_status = "PASSED" if l1.get("passed") else "FAILED"
+        l1_fails = l1.get("failCount", 0)
+        lines.append(f"L1 gates: {l1_status} ({l1_fails} failures)")
+
+        metric_improved = result.get("metricImproved", False)
+        cur = result.get("primaryMetric", 0)
+        base = result.get("baselineMetric", 0)
+        m_label = "improved" if metric_improved else "NOT improved"
+        lines.append(f"Metric: {cur:.3f} vs baseline {base:.3f} ({m_label})")
+        budget = "within" if result.get("withinBudget") else "OVER"
+        lines.append(f"Time: {result.get('totalMs', 0)}ms ({budget} budget)")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Eval gate error: {e}"
+
+
+@tool
 def audit_trail(
     limit: Annotated[int, "Maximum audit entries to return"] = 20,
 ) -> str:

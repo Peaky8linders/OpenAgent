@@ -14,6 +14,9 @@ from openagent.memory import get_context_for_task
 from openagent.model import create_model
 from openagent.tools import (
     audit_trail,
+    eval_check,
+    eval_gate,
+    eval_quality,
     memory_save,
     memory_search,
     memory_stats,
@@ -49,6 +52,17 @@ Use `secure_store` to persist context with encryption, PII detection, and sentin
 Use `secure_search` to search past conversations.
 Use `audit_trail` to view the tamper-proof compliance audit chain.
 LCM memory is HIPAA/SOC 2 ready: encrypted at rest, PII auto-detected, all access logged.
+
+### Self-Evaluation (OpenHarness eval gates)
+Use `eval_check` BEFORE writing files with sensitive content — checks for PII, unsafe patterns.
+Use `eval_quality` AFTER completing a task — scores correctness, safety, instruction following.
+Use `eval_gate` BEFORE finalizing multi-step work — full commit/revert decision gate.
+
+Under compliance mode, eval checks are MANDATORY for:
+- Any file writes containing user data
+- Any shell commands that modify state
+- Any responses containing search results from secure memory
+If `eval_gate` returns REVERT, explain what failed and propose corrections.
 {compliance_context}{knowledge_context}"""
 
 
@@ -150,6 +164,7 @@ def create_openagent(
         tools=[
             memory_search, memory_save, memory_stats,   # Brainiac
             secure_store, secure_search, audit_trail,    # LCM
+            eval_check, eval_quality, eval_gate,         # OpenHarness evals
             review_contract, scan_document_pii,          # Contract review
         ],
         backend=backend,

@@ -56,8 +56,10 @@ def start_lcm_server() -> subprocess.Popen | None:
     # Pass through store driver and database config
     lcm_env = {
         **os.environ,
-        "LCM_STORE_DRIVER": os.environ.get("LCM_STORE_DRIVER", "sqlite"),
-        "LCM_SQLITE_PATH": str(LCM_SERVER_DIR / "data" / "lcm.db"),
+        "LCM_STORE_DRIVER": os.environ.get("LCM_STORE_DRIVER", "postgres"),
+        "DATABASE_URL": os.environ.get(
+            "DATABASE_URL", "postgresql://lcm:lcm@localhost:5432/lcm_v2"
+        ),
     }
     # Forward DATABASE_URL for PostgreSQL if set
     if "DATABASE_URL" in os.environ:
@@ -171,6 +173,93 @@ class LcmClient:
         r = self._client.get("/audit", params={"limit": limit})
         r.raise_for_status()
         return r.json()
+
+    # ─── Eval Methods (OpenHarness) ──────────────────────────
+
+    def run_l1(
+        self,
+        output: str,
+        *,
+        target_content: str | None = None,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Run L1 assertion suite on agent output.
+
+        Returns suite result with passed status, individual assertions, and timing.
+        """
+        r = self._client.post(
+            "/evals/l1",
+            json={
+                "output": output,
+                "targetContent": target_content,
+                "conversationId": conversation_id,
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def run_l2_prescored(
+        self,
+        results: list[dict[str, Any]],
+        *,
+        pass_threshold: float = 0.85,
+    ) -> dict[str, Any]:
+        """Submit pre-scored L2 judge results for pass rate computation.
+
+        The agent scores each judge prompt via its own LLM, then sends results here.
+        """
+        r = self._client.post(
+            "/evals/l2",
+            json={
+                "preScored": True,
+                "results": results,
+                "passThreshold": pass_threshold,
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def run_eval(
+        self,
+        *,
+        hypothesis: str,
+        output: str,
+        primary_metric: float,
+        baseline_metric: float,
+        target_content: str | None = None,
+        target_file: str = "unknown",
+        time_budget_ms: int = 30000,
+    ) -> dict[str, Any]:
+        """Run full eval harness (L1→metric→decision).
+
+        Returns experiment result with commit/revert decision.
+        """
+        r = self._client.post(
+            "/evals/run",
+            json={
+                "hypothesis": hypothesis,
+                "output": output,
+                "targetContent": target_content,
+                "targetFile": target_file,
+                "primaryMetric": primary_metric,
+                "baselineMetric": baseline_metric,
+                "timeBudgetMs": time_budget_ms,
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def list_assertions(self) -> list[dict[str, Any]]:
+        """List available L1 assertions."""
+        r = self._client.get("/evals/assertions")
+        r.raise_for_status()
+        return r.json().get("assertions", [])
+
+    def list_judges(self) -> list[dict[str, Any]]:
+        """List available L2 judges."""
+        r = self._client.get("/evals/judges")
+        r.raise_for_status()
+        return r.json().get("judges", [])
 
     def close(self) -> None:
         """Close the HTTP client."""

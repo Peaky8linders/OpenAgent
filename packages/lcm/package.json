@@ -1,7 +1,7 @@
 {
   "name": "@lcm-v2/core",
-  "version": "0.2.0",
-  "description": "LCM v2: Hardened Lossless Context Management engine with PostgreSQL + pgvector",
+  "version": "0.3.0",
+  "description": "LCM v2 + OpenHarness: Hardened context management with eval gates (L1/L2/harness)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -33,6 +33,7 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.18.0",
     "@types/uuid": "^10.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

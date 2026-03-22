@@ -21,6 +21,15 @@ import { SecureIngestionPipeline } from './src/secure/secure-pipeline.js';
 import { MockEmbeddingGenerator } from './src/ingestion/embedding-generator.js';
 import type { RawMessage, SearchQuery } from './src/types/index.js';
 import { createHash } from 'node:crypto';
+import {
+  SECURITY_L1_SUITE, runL1Suite,
+  type L1Assertion, type L1Context,
+} from './src/evals/l1-assertions.js';
+import {
+  BUILT_IN_JUDGES, runL2Suite,
+  type LLMScorerFn,
+} from './src/evals/l2-judges.js';
+import { EvalHarness, type ExperimentConfig } from './src/evals/harness.js';
 
 // ─── Simple Sentinel (pattern-based) ─────────────────────────
 
@@ -165,7 +174,7 @@ function checkAuth(req: IncomingMessage, res: ServerResponse): boolean {
 
 async function main() {
   // Initialize store — PostgreSQL (production) or SQLite (dev/test)
-  const driver = (process.env.LCM_STORE_DRIVER ?? 'sqlite') as 'sqlite' | 'postgres';
+  const driver = (process.env.LCM_STORE_DRIVER ?? 'postgres') as 'sqlite' | 'postgres';
   const innerStore = await createStore({
     driver,
     path: process.env.LCM_SQLITE_PATH ?? ':memory:',
@@ -283,6 +292,100 @@ async function main() {
           ? await audit.verifyChainAsync()
           : audit.verifyChain();
         return json(res, 200, { entries, chain: chainStatus, count: entries.length });
+      }
+
+      // ─── Eval Endpoints (OpenHarness) ─────────────────────
+
+      // POST /evals/l1 — Run L1 assertion suite
+      if (path === '/evals/l1' && method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        const ctx: L1Context = {
+          store: innerStore,
+          output: body.output,
+          targetContent: body.targetContent,
+          conversationId: body.conversationId,
+        };
+        const result = await runL1Suite(SECURITY_L1_SUITE, ctx);
+        return json(res, 200, result);
+      }
+
+      // POST /evals/l2 — Run L2 judge suite (requires pre-scored results or server-side scorer)
+      if (path === '/evals/l2' && method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        if (body.preScored && Array.isArray(body.results)) {
+          // Client already scored — just compute pass rate
+          const results = body.results;
+          const passCount = results.filter((r: { passed: boolean }) => r.passed).length;
+          const passRate = results.length > 0 ? passCount / results.length : 1;
+          const requiredPassRate = body.passThreshold ?? 0.85;
+          return json(res, 200, {
+            passed: passRate >= requiredPassRate,
+            judges: results,
+            passRate,
+            requiredPassRate,
+            failCount: results.length - passCount,
+          });
+        }
+        // No server-side scorer available — return instructions
+        return json(res, 400, {
+          error: 'L2 judges require an LLM scorer. Either provide preScored results or configure a scorer.',
+          hint: 'Set preScored: true and provide results array with {judgeName, failureMode, passed, reasoning, confidence, durationMs}',
+        });
+      }
+
+      // POST /evals/run — Full eval harness (L1→L2→metric→decision)
+      if (path === '/evals/run' && method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        const experimentConfig: ExperimentConfig = {
+          id: body.id ?? randomUUID(),
+          hypothesis: body.hypothesis ?? 'Unnamed experiment',
+          targetFile: body.targetFile ?? 'unknown',
+          timeBudgetMs: body.timeBudgetMs ?? 30000,
+          primaryMetricName: body.primaryMetricName ?? 'score',
+          baselineMetric: body.baselineMetric ?? 0,
+          l2PassRate: body.l2PassRate ?? 0.85,
+        };
+
+        // Build harness — scorer is optional (L2 skipped if not provided)
+        const harness = new EvalHarness({
+          store: innerStore,
+          scorer: body.preScored ? undefined : undefined, // L2 requires client-side scoring
+        });
+
+        const result = await harness.evaluate(
+          experimentConfig,
+          {
+            output: body.output ?? '',
+            targetContent: body.targetContent,
+            primaryMetric: body.primaryMetric ?? 0,
+          },
+          body.l2Variables ? {
+            input: body.l2Variables.input ?? '',
+            output: body.l2Variables.output ?? body.output ?? '',
+            context: body.l2Variables.context ?? '',
+          } : undefined,
+        );
+
+        return json(res, 200, result);
+      }
+
+      // GET /evals/assertions — List available L1 assertions
+      if (path === '/evals/assertions' && method === 'GET') {
+        return json(res, 200, {
+          assertions: SECURITY_L1_SUITE.map((_, i) => ({
+            index: i,
+            name: ['no_pii_in_output', 'no_cross_tenant_leakage', 'store_healthy', 'no_unsafe_patterns'][i],
+          })),
+          count: SECURITY_L1_SUITE.length,
+        });
+      }
+
+      // GET /evals/judges — List available L2 judges
+      if (path === '/evals/judges' && method === 'GET') {
+        return json(res, 200, {
+          judges: BUILT_IN_JUDGES.map(j => ({ name: j.name, failureMode: j.failureMode })),
+          count: BUILT_IN_JUDGES.length,
+        });
       }
 
       // 404
