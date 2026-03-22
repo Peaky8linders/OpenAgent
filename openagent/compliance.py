@@ -190,6 +190,31 @@ POLICY_PACKS: MappingProxyType[ComplianceFramework, CompliancePolicy] = MappingP
 })
 
 
+def get_eval_patterns(policy: CompliancePolicy) -> list[dict[str, str]]:
+    """Get compliance-specific patterns for OpenHarness L1 eval assertions.
+
+    Converts sentinel_extra_patterns from the policy into a list suitable
+    for augmenting the default L1 security suite with compliance-specific checks.
+
+    Each returned dict has:
+        pattern: regex string
+        category: compliance category (e.g., phi_exposure, cardholder_data)
+        framework: the compliance framework name
+
+    Returns:
+        List of pattern dicts for use in L1 assertion augmentation.
+    """
+    return [
+        {
+            "pattern": p["pattern"],
+            "category": p["category"],
+            "framework": policy.framework.value,
+        }
+        for p in policy.sentinel_extra_patterns
+        if "pattern" in p and "category" in p
+    ]
+
+
 def get_policy(framework: str | ComplianceFramework) -> CompliancePolicy:
     """Get a compliance policy pack by framework name.
 

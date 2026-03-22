@@ -17,6 +17,21 @@ export { IngestionPipeline, TopicTracker } from './src/ingestion/pipeline.js';
 export type { IngestionPipelineConfig } from './src/ingestion/pipeline.js';
 export { cosineSimilarity } from './src/util/math.js';
 
+// Evals (OpenHarness — Karpathy Loop + Hamel Eval gates)
+export {
+  noPiiInOutput, noCrossTenantLeakage, storeHealthy, noUnsafePatterns,
+  scoreInRange, latencyGate, SECURITY_L1_SUITE, runL1Suite,
+} from './src/evals/l1-assertions.js';
+export type { L1Result, L1SuiteResult, L1Assertion, L1Context } from './src/evals/l1-assertions.js';
+export {
+  BUILT_IN_JUDGES, runJudge, runL2Suite, validateJudge,
+} from './src/evals/l2-judges.js';
+export type {
+  JudgeResult, L2SuiteResult, LLMScorerFn, JudgeSpec, GoldLabel, JudgeValidationResult,
+} from './src/evals/l2-judges.js';
+export { EvalHarness } from './src/evals/harness.js';
+export type { ExperimentConfig, ExperimentResult, ExperimentLog, HarnessConfig } from './src/evals/harness.js';
+
 // Secure (VaultClaw governance integration)
 export { SecureStore } from './src/secure/secure-store.js';
 export type {

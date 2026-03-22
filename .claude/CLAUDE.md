@@ -44,6 +44,8 @@ Built on Harrison Chase's open stack + LCM v2 encrypted memory + compliance engi
 - `openagent/lcm_client.py` — Python HTTP client for LCM server
 - `packages/lcm/` — LCM v2 TypeScript (SecureStore, sentinel, PII, audit chain)
 - `packages/lcm/server.ts` — LCM HTTP server (loopback-only)
+- `openharness-v0.3.0/` — LCM v2 + OpenHarness eval framework (superset of packages/lcm)
+- `openharness-v0.3.0/src/evals/` — L1 assertions, L2 judges, EvalHarness orchestrator
 - `config/agent-config.yaml` — Agent + model + compliance config
 - `config/sandbox-policy.yaml` — OpenShell security policies
 
@@ -95,11 +97,17 @@ LANGSMITH_API_KEY  — Optional. For LangSmith tracing
 
 ## Common Commands
 ```bash
+# Start PostgreSQL + pgvector (required for LCM memory)
+cd packages/lcm && docker compose up -d
+
 # Run agent locally (no sandbox)
 NVIDIA_API_KEY=nvapi-xxx python main.py
 
 # Run single task
 python main.py --task "Create a FastAPI server with health endpoint"
+
+# Run LCM tests (uses in-memory SQLite, no Postgres needed)
+cd packages/lcm && npm test
 
 # Setup OpenShell (in WSL/Linux)
 bash scripts/setup-wsl.sh
@@ -169,9 +177,51 @@ nemoclaw <sandbox> connect                        # Connect to sandbox
 ## NemoClaw Status
 NemoClaw is **alpha stage** (March 2026). Expect rough edges. Interfaces may change.
 
+## OpenHarness v0.3.0 (LCM v2 + Eval Framework)
+
+OpenHarness is LCM v2 with an integrated eval framework (Karpathy Loop + Hamel eval gates).
+Located at `openharness-v0.3.0/` — superset of `packages/lcm/` with 3 new eval modules.
+
+### What it adds over packages/lcm/
+- **`src/evals/l1-assertions.ts`** — Deterministic hard gates (PII leak, cross-tenant, latency, unsafe patterns)
+- **`src/evals/l2-judges.ts`** — LLM binary judges per failure mode (correctness, safety, hallucination)
+- **`src/evals/harness.ts`** — Orchestrator: L1→L2→metric→decision (commit/revert)
+
+### Key Abstractions
+| Layer | Purpose | Gate Type |
+|-------|---------|-----------|
+| L1 Assertions | Security invariants (PII, isolation, health) | Hard — any fail = revert |
+| L2 Judges | Quality checks via LLM scorer | Soft — pass rate ≥ threshold |
+| EvalHarness | Orchestrates L1+L2+metric+budget | Composite decision |
+
+### Integration with OpenAgent
+- **Store**: `createStore({driver, path})` → SQLite or PostgreSQL
+- **Ingestion**: `IngestionPipeline(store, embedGen, config)` — PII→compress→topic→embed→store
+- **Security**: `SecureStore(store, user, sentinel, audit)` — RBAC + sentinel + audit chain
+- **Evals**: `EvalHarness(config)` — validate agent outputs before commit
+- **Python bridge**: `openagent/lcm_client.py` → HTTP → `packages/lcm/server.ts`
+
+### Store Backends
+- **PostgreSQL** (pg + pgvector HNSW) — **DEFAULT**, production-grade, multi-tenant, RLS
+- **SQLite** (`node:sqlite`, WAL mode) — fallback for dev/testing only
+
+### Known Bugs (from code review)
+- **[C1]** FTS entries never deleted on message deletion
+- **[C2]** SQL injection in backup() via string interpolation
+- **[C3]** regex search returns empty for messages
+- **[I1]** deleteMessages() never cleans up embeddings
+- **[I2]** LIKE wildcard injection in summary search
+
+### Package Info
+- **Name**: `@lcm-v2/core` v0.2.0
+- **Runtime**: Node 22+ (uses `node:sqlite`)
+- **Dependencies**: `uuid` + optional `pg`
+- **Tests**: 68 tests via vitest, all passing
+
 ## References
 - OpenShell: https://github.com/NVIDIA/OpenShell
 - NemoClaw: https://github.com/NVIDIA/NemoClaw
 - DeepAgents: https://github.com/langchain-ai/deepagents
 - Nemotron 3 Super: https://build.nvidia.com
 - Harrison Chase post: Model + Runtime + Harness architecture
+- OpenHarness: LCM v2 eval framework (local, `openharness-v0.3.0/`)
