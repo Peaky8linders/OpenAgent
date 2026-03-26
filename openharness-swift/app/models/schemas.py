@@ -342,3 +342,62 @@ class MobileSessionResponse(BaseModel):
     version: str = "0.4.1"
 
     model_config = {"populate_by_name": True}
+
+# ─── Compliance Report Models ────────────────────────────────
+
+class SentinelStats(BaseModel):
+    total_inspections: int = Field(0, alias="totalInspections")
+    blocked_count: int = Field(0, alias="blockedCount")
+    suspicious_count: int = Field(0, alias="suspiciousCount")
+    safe_count: int = Field(0, alias="safeCount")
+    top_categories: list[dict] = Field(default_factory=list, alias="topCategories")
+
+    model_config = {"populate_by_name": True}
+
+class ComplianceReportResponse(BaseModel):
+    report_id: str = Field(..., alias="reportId")
+    generated_at: str = Field(..., alias="generatedAt")
+    version: str = "0.4.1"
+    framework: str = "none"
+    chain_integrity: dict = Field(default_factory=dict, alias="chainIntegrity")
+    sentinel_stats: SentinelStats = Field(default_factory=SentinelStats, alias="sentinelStats")
+    audit_summary: dict = Field(default_factory=dict, alias="auditSummary")
+    findings_timeline: list[dict] = Field(default_factory=list, alias="findingsTimeline")
+    compliance_score: float = Field(1.0, alias="complianceScore")
+
+    model_config = {"populate_by_name": True}
+
+# ─── GTM Models (isolated from compliance per gtm-rules.md) ─
+
+class PricingTier(BaseModel):
+    name: str
+    price: str
+    period: str = "month"
+    features: list[str]
+    highlighted: bool = False
+    cta: str = "Get Started"
+
+class FeatureCategory(BaseModel):
+    name: str
+    features: list[dict]
+
+class ProductInfo(BaseModel):
+    name: str = "VaultClaw"
+    tagline: str = "Private, compliance-grade coding agent"
+    version: str = "0.4.1"
+    pricing: list[PricingTier] = Field(default_factory=list)
+    feature_matrix: list[FeatureCategory] = Field(default_factory=list, alias="featureMatrix")
+    compliance_frameworks: list[str] = Field(default_factory=list, alias="complianceFrameworks")
+    differentiators: list[str] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+class HealthScore(BaseModel):
+    score: float = Field(..., ge=0, le=1.0)
+    status: str  # healthy | degraded | critical
+    sentinel_active: bool = Field(True, alias="sentinelActive")
+    audit_chain_valid: bool = Field(True, alias="auditChainValid")
+    uptime_seconds: float = Field(0, alias="uptimeSeconds")
+    checks: list[dict] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
