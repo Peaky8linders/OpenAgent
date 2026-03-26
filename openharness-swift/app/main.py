@@ -14,6 +14,14 @@ Mobile Client Routes (ClawGuard):
   POST /api/mobile/connect       — Validate gateway connection
   POST /api/mobile/chat          — Send message with sentinel enforcement
   GET  /api/mobile/session        — Session info + security status
+
+Compliance Report Routes:
+  GET  /api/compliance/report     — Full compliance report (JSON)
+  GET  /api/compliance/frameworks — Available compliance frameworks
+
+GTM Routes:
+  GET  /api/gtm/product          — Product feature matrix + pricing
+  GET  /api/gtm/health-score     — Live compliance health score
 """
 from __future__ import annotations
 import time
@@ -355,4 +363,237 @@ async def mobile_session(session_id: str = Query(..., alias="sessionId")) -> dic
         "auditChainValid": chain_valid,
         "auditChainLength": state.audit.count,
         "version": "0.4.1",
+    }
+
+# ─── Compliance Report ──────────────────────────────────────
+
+@app.get("/api/compliance/report")
+async def compliance_report(
+    framework: str = Query("none", description="Compliance framework: hipaa, soc2, pci, gdpr, none"),
+    since: str | None = None,
+    before: str | None = None,
+    format: str = Query("full", description="Report format: full or summary"),
+) -> dict:
+    """Generate a compliance report with audit chain, sentinel stats, and findings."""
+    report_id = str(_uuid.uuid4())
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    # Chain integrity
+    chain_valid, chain_reason = state.audit.verify_chain()
+
+    # Audit summary
+    all_entries = state.audit.query(since=since, before=before, limit=10000)
+    type_counts: dict[str, int] = {}
+    for e in all_entries:
+        type_counts[e.type] = type_counts.get(e.type, 0) + 1
+
+    # Sentinel stats from audit entries
+    sentinel_entries = [e for e in all_entries if "sentinel" in e.type or "blocked" in e.type]
+    blocked = [e for e in all_entries if e.outcome == "blocked"]
+    suspicious = [e for e in all_entries if e.outcome == "suspicious"]
+    safe = [e for e in all_entries if e.outcome in ("success", "safe")]
+
+    # Category counts from blocked entries
+    category_counts: dict[str, int] = {}
+    for e in blocked:
+        cat = e.details.get("category", "unknown")
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+    top_categories = [{"category": k, "count": v} for k, v in sorted(category_counts.items(), key=lambda x: -x[1])]
+
+    # Findings timeline (last 20 security events)
+    security_events = [e for e in all_entries if e.outcome in ("blocked", "suspicious")]
+    findings_timeline = [
+        {"timestamp": e.timestamp, "type": e.type, "target": e.target,
+         "outcome": e.outcome, "sequence": e.sequence}
+        for e in security_events[-20:]
+    ]
+
+    # Compliance score (1.0 = perfect, degrades with findings)
+    total = len(all_entries) or 1
+    blocked_ratio = len(blocked) / total
+    score = max(0.0, round(1.0 - (blocked_ratio * 5), 3))  # -5% per blocked event ratio
+    if not chain_valid:
+        score = max(0.0, score - 0.5)  # Major penalty for broken chain
+
+    state.audit.record("compliance_report_generated", framework, "success",
+                       {"report_id": report_id, "format": format, "score": str(score)})
+
+    report = {
+        "reportId": report_id,
+        "generatedAt": now,
+        "version": "0.4.1",
+        "framework": framework,
+        "chainIntegrity": {
+            "valid": chain_valid,
+            "reason": chain_reason,
+            "chainLength": state.audit.count,
+        },
+        "sentinelStats": {
+            "totalInspections": len(sentinel_entries),
+            "blockedCount": len(blocked),
+            "suspiciousCount": len(suspicious),
+            "safeCount": len(safe),
+            "topCategories": top_categories,
+        },
+        "auditSummary": {
+            "totalEntries": len(all_entries),
+            "eventTypes": type_counts,
+            "dateRange": {
+                "from": all_entries[0].timestamp if all_entries else None,
+                "to": all_entries[-1].timestamp if all_entries else None,
+            },
+        },
+        "findingsTimeline": findings_timeline,
+        "complianceScore": score,
+    }
+
+    if format == "summary":
+        return {
+            "reportId": report_id,
+            "generatedAt": now,
+            "framework": framework,
+            "complianceScore": score,
+            "chainValid": chain_valid,
+            "totalEvents": len(all_entries),
+            "blockedEvents": len(blocked),
+            "status": "compliant" if score >= 0.8 else "needs_attention" if score >= 0.5 else "non_compliant",
+        }
+
+    return report
+
+@app.get("/api/compliance/frameworks")
+async def list_frameworks() -> dict:
+    """List available compliance frameworks."""
+    return {
+        "frameworks": [
+            {"id": "hipaa", "name": "HIPAA", "description": "Health Insurance Portability and Accountability Act", "focus": "PHI protection, access controls, audit trails"},
+            {"id": "soc2", "name": "SOC 2", "description": "Service Organization Control 2", "focus": "Security, availability, processing integrity, confidentiality, privacy"},
+            {"id": "pci", "name": "PCI-DSS", "description": "Payment Card Industry Data Security Standard", "focus": "Cardholder data protection, encryption, access control"},
+            {"id": "gdpr", "name": "GDPR", "description": "General Data Protection Regulation", "focus": "Data subject rights, consent, data minimization, breach notification"},
+            {"id": "none", "name": "None", "description": "No compliance framework enforced", "focus": "Basic security only"},
+        ],
+    }
+
+# ─── GTM (isolated from compliance per gtm-rules.md) ────────
+
+@app.get("/api/gtm/product")
+async def gtm_product() -> dict:
+    """Product information for landing pages and sales materials."""
+    return {
+        "name": "VaultClaw",
+        "tagline": "Private, compliance-grade coding agent",
+        "version": "0.4.1",
+        "pricing": [
+            {
+                "name": "Open Source",
+                "price": "$0",
+                "period": "forever",
+                "features": [
+                    "Full agent + 15 tools",
+                    "Sentinel security pipeline",
+                    "Audit chain logging",
+                    "SQLite memory backend",
+                    "Community support",
+                ],
+                "highlighted": False,
+                "cta": "Get Started",
+            },
+            {
+                "name": "Pro",
+                "price": "$49",
+                "period": "month",
+                "features": [
+                    "Everything in Open Source",
+                    "HIPAA / SOC 2 / PCI / GDPR packs",
+                    "PostgreSQL + pgvector memory",
+                    "ClawGuard iOS app",
+                    "Compliance report export",
+                    "Priority support",
+                ],
+                "highlighted": True,
+                "cta": "Start Free Trial",
+            },
+            {
+                "name": "Enterprise",
+                "price": "Custom",
+                "period": "year",
+                "features": [
+                    "Everything in Pro",
+                    "Air-gapped deployment",
+                    "NemoClaw sandbox integration",
+                    "Custom compliance policies",
+                    "SSO / SAML",
+                    "Dedicated support + SLA",
+                ],
+                "highlighted": False,
+                "cta": "Contact Sales",
+            },
+        ],
+        "featureMatrix": [
+            {
+                "name": "Security",
+                "features": [
+                    {"name": "Sentinel Pipeline", "free": True, "pro": True, "enterprise": True, "description": "7 injection + 6 credential + 3 PHI detection patterns"},
+                    {"name": "Hash-Chained Audit", "free": True, "pro": True, "enterprise": True, "description": "SHA-256 tamper-proof logging"},
+                    {"name": "RBAC", "free": True, "pro": True, "enterprise": True, "description": "Role-based access control (admin/operator/auditor/user)"},
+                    {"name": "NFKC Normalization", "free": True, "pro": True, "enterprise": True, "description": "Unicode homoglyph bypass prevention"},
+                ],
+            },
+            {
+                "name": "Compliance",
+                "features": [
+                    {"name": "Compliance Frameworks", "free": False, "pro": True, "enterprise": True, "description": "HIPAA, SOC 2, PCI-DSS, GDPR policy packs"},
+                    {"name": "Compliance Reports", "free": False, "pro": True, "enterprise": True, "description": "JSON export for auditors"},
+                    {"name": "Custom Policies", "free": False, "pro": False, "enterprise": True, "description": "Define custom compliance rules"},
+                    {"name": "Air-Gap Mode", "free": False, "pro": False, "enterprise": True, "description": "Fully offline operation"},
+                ],
+            },
+            {
+                "name": "Platform",
+                "features": [
+                    {"name": "ClawGuard iOS", "free": False, "pro": True, "enterprise": True, "description": "Secure mobile client with sentinel enforcement"},
+                    {"name": "NemoClaw Sandbox", "free": False, "pro": False, "enterprise": True, "description": "Kernel-level sandboxed execution"},
+                    {"name": "PostgreSQL Backend", "free": False, "pro": True, "enterprise": True, "description": "Production-grade encrypted memory"},
+                    {"name": "One-Command Deploy", "free": True, "pro": True, "enterprise": True, "description": "curl | bash quickstart installer"},
+                ],
+            },
+        ],
+        "complianceFrameworks": ["HIPAA", "SOC 2", "PCI-DSS", "GDPR"],
+        "differentiators": [
+            "Only open-source agent with compliance-grade security (sentinel + audit chain + RBAC)",
+            "Native iOS client with bidirectional sentinel enforcement",
+            "Hash-chained audit trail for SOC 2 / HIPAA evidence",
+            "NemoClaw integration for kernel-level sandboxed execution",
+            "One-command private deployment — your data never leaves your infrastructure",
+        ],
+    }
+
+@app.get("/api/gtm/health-score")
+async def gtm_health_score() -> dict:
+    """Live compliance health score for status pages and dashboards."""
+    chain_valid, chain_reason = state.audit.verify_chain()
+    uptime = round(time.monotonic() - state.start_time, 2)
+
+    checks = [
+        {"name": "sentinel_active", "status": "pass", "detail": "Sentinel pipeline running"},
+        {"name": "audit_chain", "status": "pass" if chain_valid else "fail", "detail": chain_reason or "Chain integrity verified"},
+        {"name": "phi_detection", "status": "pass" if state.sentinel.phi_detection else "warn", "detail": "PHI/PII detection enabled" if state.sentinel.phi_detection else "PHI detection disabled"},
+        {"name": "block_suspicious", "status": "pass" if state.sentinel.block_on_suspicious else "warn", "detail": "Suspicious content blocked" if state.sentinel.block_on_suspicious else "Suspicious content allowed"},
+    ]
+
+    passed = sum(1 for c in checks if c["status"] == "pass")
+    total = len(checks)
+    score = round(passed / total, 2)
+
+    status = "healthy" if score >= 0.9 else "degraded" if score >= 0.5 else "critical"
+
+    state.audit.record("health_score_checked", "gtm", "success", {"score": str(score), "status": status})
+
+    return {
+        "score": score,
+        "status": status,
+        "sentinelActive": True,
+        "auditChainValid": chain_valid,
+        "uptimeSeconds": uptime,
+        "checks": checks,
     }

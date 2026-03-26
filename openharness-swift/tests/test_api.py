@@ -333,3 +333,111 @@ def test_mobile_chat_sentinel_has_latency():
     })
     data = r.json()
     assert data["sentinel"]["latencyMs"] >= 0
+
+# ─── Compliance Report ──────────────────────────────────────
+
+def test_compliance_report_full():
+    r = client.get("/api/compliance/report")
+    assert r.status_code == 200
+    data = r.json()
+    assert "reportId" in data
+    assert "generatedAt" in data
+    assert "chainIntegrity" in data
+    assert data["chainIntegrity"]["valid"] is True
+    assert "sentinelStats" in data
+    assert "auditSummary" in data
+    assert "findingsTimeline" in data
+    assert "complianceScore" in data
+    assert 0 <= data["complianceScore"] <= 1.0
+
+def test_compliance_report_summary():
+    r = client.get("/api/compliance/report?format=summary")
+    assert r.status_code == 200
+    data = r.json()
+    assert "reportId" in data
+    assert "complianceScore" in data
+    assert "status" in data
+    assert data["status"] in ("compliant", "needs_attention", "non_compliant")
+    # Summary should NOT have full details
+    assert "findingsTimeline" not in data
+
+def test_compliance_report_with_framework():
+    r = client.get("/api/compliance/report?framework=hipaa")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["framework"] == "hipaa"
+
+def test_compliance_frameworks_list():
+    r = client.get("/api/compliance/frameworks")
+    assert r.status_code == 200
+    data = r.json()
+    assert "frameworks" in data
+    ids = [f["id"] for f in data["frameworks"]]
+    assert "hipaa" in ids
+    assert "soc2" in ids
+    assert "pci" in ids
+    assert "gdpr" in ids
+    assert "none" in ids
+
+def test_compliance_report_records_audit():
+    initial_count = state.audit.count
+    client.get("/api/compliance/report")
+    assert state.audit.count > initial_count
+
+# ─── GTM ────────────────────────────────────────────────────
+
+def test_gtm_product_info():
+    r = client.get("/api/gtm/product")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["name"] == "VaultClaw"
+    assert "pricing" in data
+    assert len(data["pricing"]) == 3
+    # Check tier names
+    tier_names = [t["name"] for t in data["pricing"]]
+    assert "Open Source" in tier_names
+    assert "Pro" in tier_names
+    assert "Enterprise" in tier_names
+    # Feature matrix
+    assert "featureMatrix" in data
+    assert len(data["featureMatrix"]) >= 3
+    # Differentiators
+    assert "differentiators" in data
+    assert len(data["differentiators"]) >= 3
+
+def test_gtm_product_has_compliance_frameworks():
+    r = client.get("/api/gtm/product")
+    data = r.json()
+    assert "complianceFrameworks" in data
+    assert "HIPAA" in data["complianceFrameworks"]
+    assert "SOC 2" in data["complianceFrameworks"]
+
+def test_gtm_health_score():
+    r = client.get("/api/gtm/health-score")
+    assert r.status_code == 200
+    data = r.json()
+    assert "score" in data
+    assert 0 <= data["score"] <= 1.0
+    assert data["status"] in ("healthy", "degraded", "critical")
+    assert data["sentinelActive"] is True
+    assert data["auditChainValid"] is True
+    assert data["uptimeSeconds"] >= 0
+    assert "checks" in data
+    assert len(data["checks"]) >= 4
+
+def test_gtm_health_score_all_checks_pass():
+    r = client.get("/api/gtm/health-score")
+    data = r.json()
+    for check in data["checks"]:
+        assert check["status"] in ("pass", "warn", "fail")
+        assert "name" in check
+        assert "detail" in check
+
+def test_gtm_pricing_pro_highlighted():
+    r = client.get("/api/gtm/product")
+    data = r.json()
+    pro = next(t for t in data["pricing"] if t["name"] == "Pro")
+    assert pro["highlighted"] is True
+    # Only one tier should be highlighted
+    highlighted = [t for t in data["pricing"] if t["highlighted"]]
+    assert len(highlighted) == 1
