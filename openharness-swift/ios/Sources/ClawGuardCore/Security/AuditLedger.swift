@@ -58,7 +58,7 @@ public actor AuditLedger {
             "target": target,
             "ts": ts,
             "type": entryType,
-            "user": userId ?? "null",
+            "user": userId as Any? ?? NSNull(),
         ]
         let payloadString = Self.deterministicJSON(payload)
         let entryHash = Self.sha256(payloadString)
@@ -168,21 +168,47 @@ public actor AuditLedger {
     }
 
     private static func deterministicJSON(_ dict: [String: Any]) -> String {
-        // Sort keys for deterministic output (matches Python json.dumps(sort_keys=True))
-        let pairs = dict.keys.sorted().map { key -> String in
-            let value = dict[key]!
-            switch value {
-            case let s as String:
-                return "\"\(key)\": \"\(s)\""
-            case let n as Int:
-                return "\"\(key)\": \(n)"
-            case let d as [String: String]:
-                let inner = d.keys.sorted().map { k in "\"\(k)\": \"\(d[k]!)\"" }.joined(separator: ", ")
-                return "\"\(key)\": {\(inner)}"
-            default:
-                return "\"\(key)\": \"\(value)\""
+        // Use JSONSerialization with sorted keys to match Python json.dumps(sort_keys=True)
+        if #available(iOS 17.0, macOS 14.0, *) {
+            let options: JSONSerialization.WritingOptions = [.sortedKeys, .withoutEscapingSlashes]
+            if let data = try? JSONSerialization.data(withJSONObject: dict, options: options),
+               let str = String(data: data, encoding: .utf8) {
+                return str
             }
         }
+        // Fallback: manual sorted-key serialization with proper escaping
+        let pairs = dict.keys.sorted().map { key -> String in
+            let value = dict[key]!
+            return "\"\(escapeJSON(key))\": \(serializeValue(value))"
+        }
         return "{\(pairs.joined(separator: ", "))}"
+    }
+
+    private static func escapeJSON(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+         .replacingOccurrences(of: "\n", with: "\\n")
+         .replacingOccurrences(of: "\r", with: "\\r")
+         .replacingOccurrences(of: "\t", with: "\\t")
+    }
+
+    private static func serializeValue(_ value: Any) -> String {
+        switch value {
+        case let s as String:
+            return "\"\(escapeJSON(s))\""
+        case let n as Int:
+            return "\(n)"
+        case let d as Double:
+            return "\(d)"
+        case let b as Bool:
+            return b ? "true" : "false"
+        case let d as [String: Any]:
+            return deterministicJSON(d)
+        case is NSNull:
+            return "null"
+        default:
+            if "\(value)" == "null" { return "null" }
+            return "\"\(escapeJSON("\(value)"))\""
+        }
     }
 }

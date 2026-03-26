@@ -119,12 +119,15 @@ public final class SentinelPipeline: @unchecked Sendable {
         let start = CFAbsoluteTimeGetCurrent()
         var findings: [ThreatFinding] = []
 
+        // NFKC normalize to prevent Unicode homoglyph bypass
+        let nfkcContent = content.precomposedStringWithCompatibilityMapping
+
         // Normalize whitespace for injection detection
-        let normalized = content.replacingOccurrences(
+        let normalized = nfkcContent.replacingOccurrences(
             of: #"\s+"#, with: " ", options: .regularExpression
         )
         let nsNormalized = normalized as NSString
-        let nsContent = content as NSString
+        let nsContent = nfkcContent as NSString
 
         // Injection patterns
         for pattern in injectionPatterns {

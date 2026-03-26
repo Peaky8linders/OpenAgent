@@ -91,6 +91,13 @@ async def health() -> HealthResponse:
 async def generate_app(req: GenerateAppRequest) -> dict:
     """Generate an app from a natural language description.
     Runs: spec → codegen → sentinel check → L1 eval gate."""
+    # Sentinel-check description before entering the pipeline
+    desc_check = state.sentinel.inspect(req.description)
+    if desc_check.threat_level == "blocked":
+        state.audit.record("app_generation_blocked", "pipeline", "blocked",
+                           {"findings": len(desc_check.findings)})
+        raise HTTPException(status_code=403, detail="Description blocked by sentinel")
+
     state.audit.record("app_generation_requested", "pipeline", "success",
                        {"description_length": len(req.description)})
 
@@ -157,7 +164,7 @@ async def get_file(app_id: str, file_path: str) -> dict:
 
     file = next((f for f in project.files if f.path == file_path), None)
     if not file:
-        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+        raise HTTPException(status_code=404, detail="File not found")
 
     return {"path": file.path, "content": file.content, "language": file.language}
 
@@ -247,6 +254,21 @@ async def list_judges() -> dict:
 import uuid as _uuid
 
 _mobile_sessions: dict[str, dict] = {}
+_MAX_SESSIONS = 1000
+_SESSION_TTL = 3600  # 1 hour
+
+
+def _prune_sessions() -> None:
+    """Evict expired sessions to prevent unbounded growth."""
+    now = time.time()
+    expired = [k for k, v in _mobile_sessions.items() if now - v.get("created", 0) > _SESSION_TTL]
+    for k in expired:
+        del _mobile_sessions[k]
+    # Hard cap
+    if len(_mobile_sessions) > _MAX_SESSIONS:
+        oldest = sorted(_mobile_sessions, key=lambda k: _mobile_sessions[k].get("created", 0))
+        for k in oldest[: len(_mobile_sessions) - _MAX_SESSIONS]:
+            del _mobile_sessions[k]
 
 @app.post("/api/mobile/connect")
 async def mobile_connect(req: MobileConnectRequest) -> dict:
@@ -259,6 +281,7 @@ async def mobile_connect(req: MobileConnectRequest) -> dict:
                            {"findings": len(host_check.findings)})
         raise HTTPException(status_code=403, detail="Connection blocked by sentinel")
 
+    _prune_sessions()
     session_id = str(_uuid.uuid4())
     _mobile_sessions[session_id] = {
         "host": req.host, "port": req.port,
@@ -276,6 +299,10 @@ async def mobile_connect(req: MobileConnectRequest) -> dict:
 @app.post("/api/mobile/chat")
 async def mobile_chat(req: MobileChatRequest) -> dict:
     """Process a chat message from the mobile client with full sentinel enforcement."""
+    # Validate session if provided
+    if req.session_id and req.session_id not in _mobile_sessions:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
     # Sentinel-check outbound content
     inspection = state.sentinel.inspect(req.content)
 

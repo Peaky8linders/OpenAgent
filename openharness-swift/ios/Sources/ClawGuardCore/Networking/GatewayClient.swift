@@ -22,7 +22,7 @@ public struct GatewayConfig: Sendable, Codable {
     public init(
         host: String = "localhost",
         port: Int = 8080,
-        useTLS: Bool = false,
+        useTLS: Bool = true,
         apiKey: String? = nil,
         sandboxName: String? = nil,
         timeoutSeconds: Double = 30
@@ -35,14 +35,16 @@ public struct GatewayConfig: Sendable, Codable {
         self.timeoutSeconds = timeoutSeconds
     }
 
-    public var baseURL: URL {
+    public var baseURL: URL? {
         let scheme = useTLS ? "https" : "http"
-        return URL(string: "\(scheme)://\(host):\(port)")!
+        let sanitizedHost = host.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? host
+        return URL(string: "\(scheme)://\(sanitizedHost):\(port)")
     }
 
-    public var wsURL: URL {
+    public var wsURL: URL? {
         let scheme = useTLS ? "wss" : "ws"
-        return URL(string: "\(scheme)://\(host):\(port)/ws")!
+        let sanitizedHost = host.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? host
+        return URL(string: "\(scheme)://\(sanitizedHost):\(port)/ws")
     }
 }
 
@@ -114,8 +116,8 @@ public enum GatewayError: Error, LocalizedError {
 
 // MARK: - Gateway Client
 
-@Observable
-public final class GatewayClient: @unchecked Sendable {
+@Observable @MainActor
+public final class GatewayClient {
     public private(set) var connectionState: GatewayConnectionState = .disconnected
     public private(set) var messages: [AgentMessage] = []
 
@@ -125,6 +127,7 @@ public final class GatewayClient: @unchecked Sendable {
     private var webSocketTask: URLSessionWebSocketTask?
     private var session: URLSession?
     private var receiveTask: Task<Void, Never>?
+    private static let maxMessages = 500
 
     public init(sentinel: SentinelPipeline, audit: AuditLedger) {
         self.sentinel = sentinel
@@ -142,15 +145,19 @@ public final class GatewayClient: @unchecked Sendable {
         self.config = config
         connectionState = .connecting
 
+        guard let baseURL = config.baseURL else {
+            throw GatewayError.connectionFailed("Invalid host or port")
+        }
+
         await audit.record(
             type: "gateway_connect_attempt",
-            target: config.baseURL.absoluteString,
+            target: baseURL.absoluteString,
             outcome: "pending",
             details: ["host": config.host, "port": String(config.port)]
         )
 
         // First verify the gateway is reachable via HTTP health check
-        let healthURL = config.baseURL.appendingPathComponent("health")
+        let healthURL = baseURL.appendingPathComponent("health")
         var healthRequest = URLRequest(url: healthURL, timeoutInterval: config.timeoutSeconds)
         if let apiKey = config.apiKey {
             healthRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -176,7 +183,11 @@ public final class GatewayClient: @unchecked Sendable {
         let session = URLSession(configuration: .default)
         self.session = session
 
-        var wsRequest = URLRequest(url: config.wsURL)
+        guard let wsURL = config.wsURL else {
+            throw GatewayError.connectionFailed("Invalid WebSocket URL")
+        }
+
+        var wsRequest = URLRequest(url: wsURL)
         if let apiKey = config.apiKey {
             wsRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
@@ -245,13 +256,13 @@ public final class GatewayClient: @unchecked Sendable {
             throw GatewayError.messageBlocked(reasons)
         }
 
-        // Add user message to local history
+        // Add user message to local history (capped)
         let userMessage = AgentMessage(
             role: .user,
             content: content,
             metadata: MessageMetadata(sentinelResult: sentinelMeta)
         )
-        messages.append(userMessage)
+        appendMessage(userMessage)
 
         // Send via WebSocket
         let payload: [String: Any] = [
@@ -278,31 +289,61 @@ public final class GatewayClient: @unchecked Sendable {
 
     private func receiveLoop() async {
         guard let ws = webSocketTask else { return }
+        var retryCount = 0
+        let maxRetries = 5
 
         while !Task.isCancelled {
             do {
                 let message = try await ws.receive()
+                retryCount = 0 // Reset on successful receive
                 switch message {
                 case .string(let text):
-                    await handleIncoming(text)
+                    handleIncoming(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        await handleIncoming(text)
+                        handleIncoming(text)
                     }
                 @unknown default:
                     break
                 }
             } catch {
-                if !Task.isCancelled {
+                if Task.isCancelled { break }
+
+                retryCount += 1
+                if retryCount > maxRetries {
                     connectionState = .failed(error)
                     await audit.record(
                         type: "gateway_receive_error",
                         target: config?.host ?? "unknown",
                         outcome: "failure",
-                        details: ["error": error.localizedDescription]
+                        details: ["error": error.localizedDescription, "retries_exhausted": "true"]
                     )
+                    break
                 }
-                break
+
+                // Exponential backoff reconnect
+                connectionState = .reconnecting
+                await audit.record(
+                    type: "gateway_reconnecting",
+                    target: config?.host ?? "unknown",
+                    outcome: "pending",
+                    details: ["retry": String(retryCount)]
+                )
+                let delay = min(pow(2.0, Double(retryCount)), 30.0)
+                try? await Task.sleep(for: .seconds(delay))
+
+                if let config, let wsURL = config.wsURL {
+                    var wsRequest = URLRequest(url: wsURL)
+                    if let apiKey = config.apiKey {
+                        wsRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                    }
+                    let newTask = (session ?? URLSession(configuration: .default)).webSocketTask(with: wsRequest)
+                    self.webSocketTask = newTask
+                    newTask.resume()
+                    connectionState = .connected
+                } else {
+                    break
+                }
             }
         }
     }
@@ -357,7 +398,15 @@ public final class GatewayClient: @unchecked Sendable {
             metadata: metadata
         )
 
-        messages.append(agentMessage)
+        appendMessage(agentMessage)
+    }
+
+    /// Append message with cap to prevent unbounded growth
+    private func appendMessage(_ message: AgentMessage) {
+        messages.append(message)
+        if messages.count > Self.maxMessages {
+            messages.removeFirst(messages.count - Self.maxMessages)
+        }
     }
 
     // MARK: - REST API Fallback
@@ -377,9 +426,12 @@ public final class GatewayClient: @unchecked Sendable {
         }
 
         let userMessage = AgentMessage(role: .user, content: content)
-        messages.append(userMessage)
+        appendMessage(userMessage)
 
-        let url = config.baseURL.appendingPathComponent("v1/chat/completions")
+        guard let baseURL = config.baseURL else {
+            throw GatewayError.connectionFailed("Invalid URL")
+        }
+        let url = baseURL.appendingPathComponent("v1/chat/completions")
         var request = URLRequest(url: url, timeoutInterval: config.timeoutSeconds)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -447,9 +499,11 @@ public final class GatewayClient: @unchecked Sendable {
     // MARK: - Gateway Info
 
     public func fetchGatewayInfo() async throws -> GatewayInfo {
-        guard let config else { throw GatewayError.connectionFailed("No config") }
+        guard let config, let baseURL = config.baseURL else {
+            throw GatewayError.connectionFailed("No config or invalid URL")
+        }
 
-        let url = config.baseURL.appendingPathComponent("health")
+        let url = baseURL.appendingPathComponent("health")
         var request = URLRequest(url: url, timeoutInterval: config.timeoutSeconds)
         if let apiKey = config.apiKey {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -461,9 +515,11 @@ public final class GatewayClient: @unchecked Sendable {
 
     /// List available sandboxes on the gateway
     public func listSandboxes() async throws -> [SandboxInfo] {
-        guard let config else { throw GatewayError.connectionFailed("No config") }
+        guard let config, let baseURL = config.baseURL else {
+            throw GatewayError.connectionFailed("No config or invalid URL")
+        }
 
-        let url = config.baseURL.appendingPathComponent("v1/sandboxes")
+        let url = baseURL.appendingPathComponent("v1/sandboxes")
         var request = URLRequest(url: url, timeoutInterval: config.timeoutSeconds)
         if let apiKey = config.apiKey {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

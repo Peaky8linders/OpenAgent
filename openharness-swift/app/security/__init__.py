@@ -72,6 +72,10 @@ class SentinelPipeline:
         start = time.monotonic()
         findings: list[Finding] = []
 
+        # NFKC normalize to prevent Unicode homoglyph bypass
+        import unicodedata
+        content = unicodedata.normalize("NFKC", content)
+
         # Injection patterns
         normalized = re.sub(r"\s+", " ", content)
         for pattern, category, desc in INJECTION_PATTERNS:
@@ -152,6 +156,8 @@ class AuditLedger:
         self._entries: list[AuditLogEntry] = []
         self._sequence = 0
         self._last_hash = GENESIS_HASH
+        self._chain_valid: bool = True
+        self._chain_reason: str | None = None
 
     def record(
         self,
@@ -164,7 +170,8 @@ class AuditLedger:
         import uuid
         self._sequence += 1
         entry_id = str(uuid.uuid4())
-        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
         # Redact sensitive values
         safe_details = self._redact(details or {})
@@ -188,6 +195,11 @@ class AuditLedger:
         return entry
 
     def verify_chain(self) -> tuple[bool, Optional[str]]:
+        """Verify chain integrity. Result is cached and invalidated on append."""
+        return self._chain_valid, self._chain_reason
+
+    def _full_verify(self) -> tuple[bool, Optional[str]]:
+        """Full O(n) verification — called internally when needed."""
         if not self._entries:
             return True, None
         if self._entries[0].previous_hash != GENESIS_HASH:

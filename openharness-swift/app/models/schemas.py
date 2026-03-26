@@ -266,7 +266,7 @@ class GenerateAppRequest(BaseModel):
     description: str = Field(..., min_length=10, max_length=2000)
 
 class InspectContentRequest(BaseModel):
-    content: str = Field(..., min_length=1)
+    content: str = Field(..., min_length=1, max_length=50000)
     source: str = "user_message"
 
 class AuditQueryRequest(BaseModel):

@@ -8,7 +8,7 @@ struct ConnectionView: View {
     @State private var port = "8080"
     @State private var apiKey = ""
     @State private var sandboxName = ""
-    @State private var useTLS = false
+    @State private var useTLS = true
     @State private var isConnecting = false
     @State private var errorMessage: String?
     @State private var savedConnections: [StoredCredential] = []

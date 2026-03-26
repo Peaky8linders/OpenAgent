@@ -220,7 +220,11 @@ public actor CredentialVault {
 
     private func saveIndex() throws {
         let ids = cachedCredentials.map(\.id).joined(separator: ",")
-        try storeInKeychain(key: indexKey(), value: ids.isEmpty ? " " : ids)
+        if ids.isEmpty {
+            deleteFromKeychain(key: indexKey())
+        } else {
+            try storeInKeychain(key: indexKey(), value: ids)
+        }
     }
 }
 
