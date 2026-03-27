@@ -1,23 +1,6 @@
 import SwiftUI
 
-// MARK: - ClawGuard App Entry Point
-// Secure iOS client for OpenClaw/NemoClaw
-
-@main
-public struct ClawGuardApp: App {
-    @State private var appState = AppState()
-
-    public init() {}
-
-    public var body: some Scene {
-        WindowGroup {
-            RootView()
-                .environment(appState)
-        }
-    }
-}
-
-// MARK: - App State
+// MARK: - App State (Observable, shared across all views)
 
 @Observable
 public final class AppState {
@@ -41,12 +24,14 @@ public final class AppState {
     }
 }
 
-// MARK: - Root View
+// MARK: - Root View (connection gate)
 
-struct RootView: View {
+public struct RootView: View {
     @Environment(AppState.self) private var appState
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         Group {
             if appState.isConnected {
                 MainTabView()
@@ -59,8 +44,10 @@ struct RootView: View {
 
 // MARK: - Main Tab View
 
-struct MainTabView: View {
-    var body: some View {
+public struct MainTabView: View {
+    public init() {}
+
+    public var body: some View {
         TabView {
             ChatView()
                 .tabItem {
@@ -79,3 +66,17 @@ struct MainTabView: View {
         }
     }
 }
+
+// MARK: - App Entry Point (for Xcode project integration)
+// Import ClawGuardCore in your Xcode project's App.swift and use:
+//
+//   @main
+//   struct MyApp: App {
+//       @State private var appState = AppState()
+//       var body: some Scene {
+//           WindowGroup {
+//               RootView()
+//                   .environment(appState)
+//           }
+//       }
+//   }

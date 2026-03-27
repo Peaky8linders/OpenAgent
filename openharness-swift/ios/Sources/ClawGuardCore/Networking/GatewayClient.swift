@@ -298,10 +298,10 @@ public final class GatewayClient {
                 retryCount = 0 // Reset on successful receive
                 switch message {
                 case .string(let text):
-                    handleIncoming(text)
+                    await handleIncoming(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        handleIncoming(text)
+                        await handleIncoming(text)
                     }
                 @unknown default:
                     break

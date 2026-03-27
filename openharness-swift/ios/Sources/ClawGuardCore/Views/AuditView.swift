@@ -3,13 +3,15 @@ import SwiftUI
 // MARK: - Audit Trail View
 // Real-time view of the hash-chained audit ledger
 
-struct AuditView: View {
+public struct AuditView: View {
     @Environment(AppState.self) private var appState
     @State private var entries: [AuditLogEntry] = []
     @State private var chainValid = true
     @State private var chainReason: String?
     @State private var filterType: String?
     @State private var isVerifying = false
+
+    public init() {}
 
     private let auditTypes = [
         nil, "message_sent", "message_blocked", "message_sentinel_check",
