@@ -401,3 +401,29 @@ class HealthScore(BaseModel):
     checks: list[dict] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
+
+class ScreenshotSpec(BaseModel):
+    width: int
+    height: int
+    device: str
+
+class AppStoreMetadataResponse(BaseModel):
+    app_name: str = Field(..., alias="appName")
+    subtitle: str
+    bundle_id: str = Field(..., alias="bundleId")
+    version: str
+    minimum_os_version: str = Field(..., alias="minimumOSVersion")
+    category: str
+    secondary_category: str = Field(..., alias="secondaryCategory")
+    age_rating: str = Field(..., alias="ageRating")
+    price: str
+    description: str
+    keywords: list[str]
+    privacy_policy_url: str = Field(..., alias="privacyPolicyUrl")
+    support_url: str = Field(..., alias="supportUrl")
+    marketing_url: str = Field(..., alias="marketingUrl")
+    screenshot_specs: dict[str, ScreenshotSpec] = Field(default_factory=dict, alias="screenshotSpecs")
+    required_screenshots: list[str] = Field(default_factory=list, alias="requiredScreenshots")
+    review_notes: str = Field(..., alias="reviewNotes")
+
+    model_config = {"populate_by_name": True}

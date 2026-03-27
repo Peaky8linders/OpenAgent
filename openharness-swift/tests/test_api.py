@@ -452,7 +452,10 @@ def test_appstore_metadata():
     assert data["bundleId"] == "com.vaultclaw.clawguard"
     assert data["ageRating"] == "4+"
     assert data["category"] == "Developer Tools"
-    assert len(data["keywords"]) >= 10
+    assert len(data["keywords"]) >= 8
+    # Verify keywords fit Apple's 100-char limit
+    joined = ", ".join(data["keywords"])
+    assert len(joined) <= 100, f"Keywords too long ({len(joined)} chars): {joined}"
     assert "privacyPolicyUrl" in data
     assert "reviewNotes" in data
 

@@ -7,7 +7,6 @@ Run: pip install Pillow && python scripts/generate-app-icon.py
 
 Output: openharness-swift/ios/App/Assets.xcassets/AppIcon.appiconset/icon_1024.png
 """
-import math
 import sys
 from pathlib import Path
 

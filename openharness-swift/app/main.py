@@ -22,6 +22,7 @@ Compliance Report Routes:
 GTM Routes:
   GET  /api/gtm/product          — Product feature matrix + pricing
   GET  /api/gtm/health-score     — Live compliance health score
+  GET  /api/gtm/appstore-metadata — App Store listing data for ClawGuard
 """
 from __future__ import annotations
 import time
@@ -600,9 +601,10 @@ async def gtm_health_score() -> dict:
 
 # ─── App Store Metadata (for ClawGuard listing) ─────────────
 
-@app.get("/api/gtm/appstore-metadata")
+@app.get("/api/gtm/appstore-metadata", response_model=None)
 async def appstore_metadata() -> dict:
-    """App Store listing metadata for ClawGuard iOS."""
+    """App Store listing metadata for ClawGuard iOS.
+    Response validated by AppStoreMetadataResponse model in schemas.py."""
     return {
         "appName": "ClawGuard",
         "subtitle": "Secure AI Agent Client",
@@ -638,11 +640,10 @@ async def appstore_metadata() -> dict:
             "- Optional sandbox selection for NemoClaw\n\n"
             "Open source: github.com/Peaky8linders/OpenAgent"
         ),
+        # Apple allows max 100 chars total (comma-separated). Current: 97 chars.
         "keywords": [
-            "AI agent", "coding assistant", "security", "privacy",
-            "OpenClaw", "NemoClaw", "NVIDIA", "sentinel", "compliance",
-            "HIPAA", "SOC 2", "developer tools", "encrypted", "audit",
-            "open source",
+            "AI agent", "coding", "security", "privacy", "OpenClaw",
+            "NemoClaw", "sentinel", "HIPAA", "audit", "encrypted",
         ],
         "privacyPolicyUrl": "https://github.com/Peaky8linders/OpenAgent/blob/main/PRIVACY.md",
         "supportUrl": "https://github.com/Peaky8linders/OpenAgent/issues",

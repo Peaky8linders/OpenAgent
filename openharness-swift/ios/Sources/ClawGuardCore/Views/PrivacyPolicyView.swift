@@ -247,6 +247,7 @@ struct PolicySection: View {
 
 public struct AIConsentView: View {
     @Binding var hasConsented: Bool
+    @State private var showPrivacyPolicy = false
 
     public init(hasConsented: Binding<Bool>) {
         self._hasConsented = hasConsented
@@ -259,6 +260,7 @@ public struct AIConsentView: View {
             Image(systemName: "cpu")
                 .font(.system(size: 64))
                 .foregroundStyle(.blue)
+                .accessibilityHidden(true)
 
             Text("AI Agent Connection")
                 .font(.title.bold())
@@ -288,9 +290,15 @@ public struct AIConsentView: View {
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
+            .accessibilityLabel("Accept AI data processing and continue")
 
-            Button("View Privacy Policy") {}
-                .font(.caption)
+            Button("View Privacy Policy") {
+                showPrivacyPolicy = true
+            }
+            .font(.caption)
+            .sheet(isPresented: $showPrivacyPolicy) {
+                PrivacyPolicyView()
+            }
 
             Spacer()
         }
