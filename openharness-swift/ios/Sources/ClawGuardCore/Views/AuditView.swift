@@ -177,6 +177,8 @@ struct AuditEntryRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Audit entry \(entry.sequence): \(entry.type.replacingOccurrences(of: "_", with: " ")), outcome \(entry.outcome), target \(entry.target)")
     }
 
     private func iconForType(_ type: String) -> String {
