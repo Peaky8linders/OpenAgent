@@ -24,16 +24,19 @@ public final class AppState {
     }
 }
 
-// MARK: - Root View (connection gate)
+// MARK: - Root View (consent gate → connection gate)
 
 public struct RootView: View {
     @Environment(AppState.self) private var appState
+    @AppStorage("hasConsentedToAI") private var hasConsentedToAI = false
 
     public init() {}
 
     public var body: some View {
         Group {
-            if appState.isConnected {
+            if !hasConsentedToAI {
+                AIConsentView(hasConsented: $hasConsentedToAI)
+            } else if appState.isConnected {
                 MainTabView()
             } else {
                 ConnectionView()

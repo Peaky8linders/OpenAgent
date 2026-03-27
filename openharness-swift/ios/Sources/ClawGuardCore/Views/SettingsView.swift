@@ -128,6 +128,8 @@ public struct SettingsView: View {
                 Text("v1.0.0")
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("ClawGuard version 1.0.0")
 
             HStack {
                 Text("Security")
@@ -136,6 +138,8 @@ public struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Security features: Sentinel, Audit Chain, and Keychain encryption")
 
             HStack {
                 Text("Compatible With")
@@ -143,6 +147,18 @@ public struct SettingsView: View {
                 Text("OpenClaw / NemoClaw")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Compatible with OpenClaw and NemoClaw gateways")
+
+            NavigationLink {
+                PrivacyPolicyView()
+            } label: {
+                Label("Privacy Policy", systemImage: "hand.raised.fill")
+            }
+
+            Link(destination: URL(string: "https://github.com/Peaky8linders/OpenAgent")!) {
+                Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
             }
         }
     }

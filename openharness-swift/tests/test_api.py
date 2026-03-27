@@ -441,3 +441,52 @@ def test_gtm_pricing_pro_highlighted():
     # Only one tier should be highlighted
     highlighted = [t for t in data["pricing"] if t["highlighted"]]
     assert len(highlighted) == 1
+
+# ─── App Store Metadata ─────────────────────────────────────
+
+def test_appstore_metadata():
+    r = client.get("/api/gtm/appstore-metadata")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["appName"] == "ClawGuard"
+    assert data["bundleId"] == "com.vaultclaw.clawguard"
+    assert data["ageRating"] == "4+"
+    assert data["category"] == "Developer Tools"
+    assert len(data["keywords"]) >= 8
+    # Verify keywords fit Apple's 100-char limit
+    joined = ", ".join(data["keywords"])
+    assert len(joined) <= 100, f"Keywords too long ({len(joined)} chars): {joined}"
+    assert "privacyPolicyUrl" in data
+    assert "reviewNotes" in data
+
+def test_appstore_metadata_has_screenshot_specs():
+    r = client.get("/api/gtm/appstore-metadata")
+    data = r.json()
+    assert "screenshotSpecs" in data
+    assert "iphone_6_7" in data["screenshotSpecs"]
+    assert data["screenshotSpecs"]["iphone_6_7"]["width"] == 1290
+
+def test_appstore_metadata_has_description():
+    r = client.get("/api/gtm/appstore-metadata")
+    data = r.json()
+    desc = data["description"]
+    # Must mention key features
+    assert "Sentinel" in desc
+    assert "audit" in desc.lower()
+    assert "Keychain" in desc
+    assert "OpenClaw" in desc
+    assert "NemoClaw" in desc
+    # Must mention privacy
+    assert "No data sent to our servers" in desc
+
+def test_appstore_metadata_review_notes():
+    r = client.get("/api/gtm/appstore-metadata")
+    data = r.json()
+    notes = data["reviewNotes"]
+    # Must explain how to test (Apple requires this for apps needing server)
+    assert "gateway" in notes.lower()
+    assert "AI model" in notes
+    # Must NOT leak internal infra details (server commands, ports, TLS config)
+    assert "uvicorn" not in notes
+    assert "Port=8000" not in notes
+    assert "TLS=off" not in notes

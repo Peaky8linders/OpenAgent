@@ -102,6 +102,7 @@ public struct ChatView: View {
             Circle()
                 .fill(.green)
                 .frame(width: 6, height: 6)
+                .accessibilityHidden(true)
             Text("Sentinel active")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -116,11 +117,15 @@ public struct ChatView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Last message threat level: \(sentinel.threatLevel), inspection time \(String(format: "%.1f", sentinel.latencyMs)) milliseconds")
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
         .background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Sentinel security status bar")
     }
 
     // MARK: - Input Bar
@@ -158,10 +163,13 @@ public struct ChatView: View {
             Circle()
                 .fill(appState.isConnected ? .green : .red)
                 .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
             Text(appState.isConnected ? "Connected" : "Disconnected")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Gateway connection status: \(appState.isConnected ? "connected" : "disconnected")")
     }
 
     // MARK: - Actions
@@ -250,6 +258,8 @@ struct MessageBubble: View {
 
             if message.role != .user { Spacer(minLength: 60) }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(message.role.rawValue) message: \(message.content)")
     }
 
     private var bubbleColor: Color {

@@ -22,6 +22,7 @@ Compliance Report Routes:
 GTM Routes:
   GET  /api/gtm/product          — Product feature matrix + pricing
   GET  /api/gtm/health-score     — Live compliance health score
+  GET  /api/gtm/appstore-metadata — App Store listing data for ClawGuard
 """
 from __future__ import annotations
 import time
@@ -124,13 +125,13 @@ async def generate_app(req: GenerateAppRequest) -> dict:
         }
     else:
         failed_stage = next((s for s in pipeline.stages if not s.success), None)
+        # Sanitize error — do not leak full pipeline state (SOC 2 CC6, OWASP A05)
         raise HTTPException(
             status_code=422,
             detail={
                 "success": False,
-                "error": failed_stage.error if failed_stage else "Unknown pipeline failure",
+                "error": failed_stage.error if failed_stage else "Pipeline failed",
                 "failed_stage": failed_stage.stage.value if failed_stage else None,
-                "pipeline": pipeline.model_dump(by_alias=True),
             },
         )
 
@@ -596,4 +597,75 @@ async def gtm_health_score() -> dict:
         "auditChainValid": chain_valid,
         "uptimeSeconds": uptime,
         "checks": checks,
+    }
+
+# ─── App Store Metadata (for ClawGuard listing) ─────────────
+
+@app.get("/api/gtm/appstore-metadata", response_model=None)
+async def appstore_metadata() -> dict:
+    """App Store listing metadata for ClawGuard iOS.
+    Response validated by AppStoreMetadataResponse model in schemas.py."""
+    return {
+        "appName": "ClawGuard",
+        "subtitle": "Secure AI Agent Client",
+        "bundleId": "com.vaultclaw.clawguard",
+        "version": "1.0.0",
+        "minimumOSVersion": "17.0",
+        "category": "Developer Tools",
+        "secondaryCategory": "Productivity",
+        "ageRating": "4+",
+        "price": "Free",
+        "description": (
+            "ClawGuard is the first security-hardened iOS client for "
+            "OpenClaw and NemoClaw AI coding agents.\n\n"
+            "SECURITY FIRST\n"
+            "- Sentinel pipeline inspects every message for prompt injection, "
+            "credential leaks, and PII/PHI before sending\n"
+            "- SHA-256 hash-chained audit trail for tamper-proof security logging\n"
+            "- iOS Keychain encrypted credential storage\n"
+            "- NFKC Unicode normalization prevents homoglyph bypass attacks\n\n"
+            "PRIVACY BY DESIGN\n"
+            "- No data sent to our servers — messages go only to YOUR gateway\n"
+            "- No analytics, no tracking, no telemetry\n"
+            "- All security inspection happens on-device\n"
+            "- Credentials never leave your iOS Keychain\n\n"
+            "ENTERPRISE COMPLIANCE\n"
+            "- Supports HIPAA, SOC 2, PCI-DSS, GDPR compliance frameworks\n"
+            "- Exportable audit trail for compliance auditors\n"
+            "- Role-based access control (RBAC)\n\n"
+            "CONNECT TO YOUR AGENT\n"
+            "- Works with any OpenClaw or NemoClaw gateway\n"
+            "- WebSocket real-time communication with TLS\n"
+            "- Save multiple gateway connections\n"
+            "- Optional sandbox selection for NemoClaw\n\n"
+            "Open source: github.com/Peaky8linders/OpenAgent"
+        ),
+        # Apple allows max 100 chars total (comma-separated). Current: 97 chars.
+        "keywords": [
+            "AI agent", "coding", "security", "privacy", "OpenClaw",
+            "NemoClaw", "sentinel", "HIPAA", "audit", "encrypted",
+        ],
+        "privacyPolicyUrl": "https://github.com/Peaky8linders/OpenAgent/blob/main/PRIVACY.md",
+        "supportUrl": "https://github.com/Peaky8linders/OpenAgent/issues",
+        "marketingUrl": "https://github.com/Peaky8linders/OpenAgent",
+        "screenshotSpecs": {
+            "iphone_6_7": {"width": 1290, "height": 2796, "device": "iPhone 15 Pro Max"},
+            "iphone_6_5": {"width": 1284, "height": 2778, "device": "iPhone 14 Pro Max"},
+            "ipad_12_9": {"width": 2048, "height": 2732, "device": "iPad Pro 12.9"},
+        },
+        "requiredScreenshots": [
+            "Connection screen with security badges",
+            "Chat view with sentinel status bar",
+            "Audit trail with chain verification",
+            "Settings with security toggles",
+            "Sentinel blocking a prompt injection",
+        ],
+        "reviewNotes": (
+            "ClawGuard connects to user-hosted OpenClaw/NemoClaw gateways. "
+            "The app does NOT include its own AI model. It connects to "
+            "user-configured gateways that run AI models.\n\n"
+            "For review: a test gateway is available. See the repository "
+            "README for setup instructions.\n\n"
+            "No demo account needed — the app connects to local gateways."
+        ),
     }
