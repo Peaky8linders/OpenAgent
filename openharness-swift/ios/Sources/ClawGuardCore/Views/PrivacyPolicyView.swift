@@ -49,8 +49,13 @@ public struct PrivacyPolicyView: View {
             or other models).
 
             Your messages are sent to YOUR gateway — not to our servers. \
-            ClawGuard does not operate any AI models itself. The AI processing \
-            happens entirely on the gateway you configure.
+            ClawGuard does not operate any AI models itself and does not \
+            train on your data. The AI processing happens entirely on the \
+            gateway you configure.
+
+            Data sharing with AI providers (e.g., NVIDIA, Anthropic, or \
+            self-hosted models) is governed entirely by your gateway \
+            configuration, not by ClawGuard.
 
             AI-generated responses are clearly labeled as coming from the \
             "assistant" role in the chat interface.
@@ -96,8 +101,8 @@ public struct PrivacyPolicyView: View {
 
             Messages flagged as "blocked" are not sent to your gateway. \
             You can disable PHI detection or suspicious content blocking \
-            in Settings, but injection and credential detection cannot be \
-            disabled as they protect your security.
+            in Settings. Injection and credential detection are enabled \
+            by default and strongly recommended for your security.
             """
         )
     }

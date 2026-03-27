@@ -484,5 +484,9 @@ def test_appstore_metadata_review_notes():
     data = r.json()
     notes = data["reviewNotes"]
     # Must explain how to test (Apple requires this for apps needing server)
-    assert "localhost" in notes
     assert "gateway" in notes.lower()
+    assert "AI model" in notes
+    # Must NOT leak internal infra details (server commands, ports, TLS config)
+    assert "uvicorn" not in notes
+    assert "Port=8000" not in notes
+    assert "TLS=off" not in notes

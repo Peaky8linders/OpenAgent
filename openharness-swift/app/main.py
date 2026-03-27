@@ -125,13 +125,13 @@ async def generate_app(req: GenerateAppRequest) -> dict:
         }
     else:
         failed_stage = next((s for s in pipeline.stages if not s.success), None)
+        # Sanitize error — do not leak full pipeline state (SOC 2 CC6, OWASP A05)
         raise HTTPException(
             status_code=422,
             detail={
                 "success": False,
-                "error": failed_stage.error if failed_stage else "Unknown pipeline failure",
+                "error": failed_stage.error if failed_stage else "Pipeline failed",
                 "failed_stage": failed_stage.stage.value if failed_stage else None,
-                "pipeline": pipeline.model_dump(by_alias=True),
             },
         )
 
@@ -662,11 +662,10 @@ async def appstore_metadata() -> dict:
         ],
         "reviewNotes": (
             "ClawGuard connects to user-hosted OpenClaw/NemoClaw gateways. "
-            "For testing, use the mock backend included in the repository: "
-            "cd openharness-swift && uvicorn app.main:app --reload\n\n"
-            "Test connection: Host=localhost, Port=8000, TLS=off\n\n"
             "The app does NOT include its own AI model. It connects to "
             "user-configured gateways that run AI models.\n\n"
+            "For review: a test gateway is available. See the repository "
+            "README for setup instructions.\n\n"
             "No demo account needed — the app connects to local gateways."
         ),
     }
