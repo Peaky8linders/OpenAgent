@@ -597,3 +597,75 @@ async def gtm_health_score() -> dict:
         "uptimeSeconds": uptime,
         "checks": checks,
     }
+
+# ─── App Store Metadata (for ClawGuard listing) ─────────────
+
+@app.get("/api/gtm/appstore-metadata")
+async def appstore_metadata() -> dict:
+    """App Store listing metadata for ClawGuard iOS."""
+    return {
+        "appName": "ClawGuard",
+        "subtitle": "Secure AI Agent Client",
+        "bundleId": "com.vaultclaw.clawguard",
+        "version": "1.0.0",
+        "minimumOSVersion": "17.0",
+        "category": "Developer Tools",
+        "secondaryCategory": "Productivity",
+        "ageRating": "4+",
+        "price": "Free",
+        "description": (
+            "ClawGuard is the first security-hardened iOS client for "
+            "OpenClaw and NemoClaw AI coding agents.\n\n"
+            "SECURITY FIRST\n"
+            "- Sentinel pipeline inspects every message for prompt injection, "
+            "credential leaks, and PII/PHI before sending\n"
+            "- SHA-256 hash-chained audit trail for tamper-proof security logging\n"
+            "- iOS Keychain encrypted credential storage\n"
+            "- NFKC Unicode normalization prevents homoglyph bypass attacks\n\n"
+            "PRIVACY BY DESIGN\n"
+            "- No data sent to our servers — messages go only to YOUR gateway\n"
+            "- No analytics, no tracking, no telemetry\n"
+            "- All security inspection happens on-device\n"
+            "- Credentials never leave your iOS Keychain\n\n"
+            "ENTERPRISE COMPLIANCE\n"
+            "- Supports HIPAA, SOC 2, PCI-DSS, GDPR compliance frameworks\n"
+            "- Exportable audit trail for compliance auditors\n"
+            "- Role-based access control (RBAC)\n\n"
+            "CONNECT TO YOUR AGENT\n"
+            "- Works with any OpenClaw or NemoClaw gateway\n"
+            "- WebSocket real-time communication with TLS\n"
+            "- Save multiple gateway connections\n"
+            "- Optional sandbox selection for NemoClaw\n\n"
+            "Open source: github.com/Peaky8linders/OpenAgent"
+        ),
+        "keywords": [
+            "AI agent", "coding assistant", "security", "privacy",
+            "OpenClaw", "NemoClaw", "NVIDIA", "sentinel", "compliance",
+            "HIPAA", "SOC 2", "developer tools", "encrypted", "audit",
+            "open source",
+        ],
+        "privacyPolicyUrl": "https://github.com/Peaky8linders/OpenAgent/blob/main/PRIVACY.md",
+        "supportUrl": "https://github.com/Peaky8linders/OpenAgent/issues",
+        "marketingUrl": "https://github.com/Peaky8linders/OpenAgent",
+        "screenshotSpecs": {
+            "iphone_6_7": {"width": 1290, "height": 2796, "device": "iPhone 15 Pro Max"},
+            "iphone_6_5": {"width": 1284, "height": 2778, "device": "iPhone 14 Pro Max"},
+            "ipad_12_9": {"width": 2048, "height": 2732, "device": "iPad Pro 12.9"},
+        },
+        "requiredScreenshots": [
+            "Connection screen with security badges",
+            "Chat view with sentinel status bar",
+            "Audit trail with chain verification",
+            "Settings with security toggles",
+            "Sentinel blocking a prompt injection",
+        ],
+        "reviewNotes": (
+            "ClawGuard connects to user-hosted OpenClaw/NemoClaw gateways. "
+            "For testing, use the mock backend included in the repository: "
+            "cd openharness-swift && uvicorn app.main:app --reload\n\n"
+            "Test connection: Host=localhost, Port=8000, TLS=off\n\n"
+            "The app does NOT include its own AI model. It connects to "
+            "user-configured gateways that run AI models.\n\n"
+            "No demo account needed — the app connects to local gateways."
+        ),
+    }
