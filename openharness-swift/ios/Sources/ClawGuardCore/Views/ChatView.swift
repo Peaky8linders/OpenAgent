@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Chat View with Sentinel-Enforced Message Flow
 
-struct ChatView: View {
+public struct ChatView: View {
     @Environment(AppState.self) private var appState
     @State private var inputText = ""
     @State private var isSending = false
@@ -10,7 +10,9 @@ struct ChatView: View {
     @State private var sentinelAlertMessage = ""
     @FocusState private var inputFocused: Bool
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 messageList

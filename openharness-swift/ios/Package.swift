@@ -13,10 +13,13 @@ let package = Package(
         .library(name: "ClawGuardCore", targets: ["ClawGuardCore"]),
     ],
     targets: [
+        // Core library — sentinel, audit, vault, networking, views
         .target(
             name: "ClawGuardCore",
-            path: "Sources/ClawGuardCore"
+            path: "Sources/ClawGuardCore",
+            exclude: ["App/ClawGuardApp.swift"]
         ),
+        // Tests
         .testTarget(
             name: "ClawGuardCoreTests",
             dependencies: ["ClawGuardCore"],

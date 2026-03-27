@@ -2,13 +2,15 @@ import SwiftUI
 
 // MARK: - Settings View
 
-struct SettingsView: View {
+public struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @State private var showDisconnectConfirm = false
     @State private var credentials: [StoredCredential] = []
     @State private var auditCount = 0
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         NavigationStack {
             List {
                 connectionSection

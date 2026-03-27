@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Connection / Onboarding View
 
-struct ConnectionView: View {
+public struct ConnectionView: View {
     @Environment(AppState.self) private var appState
     @State private var host = "localhost"
     @State private var port = "8080"
@@ -14,7 +14,9 @@ struct ConnectionView: View {
     @State private var savedConnections: [StoredCredential] = []
     @State private var connectionName = ""
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
