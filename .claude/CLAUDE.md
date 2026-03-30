@@ -15,9 +15,10 @@ Built on Harrison Chase's open stack + LCM v2 encrypted memory + compliance engi
 ┌─────────────────────────────────────────────┐
 │  CLI (openagent/cli.py)                      │
 │  --compliance hipaa|soc2|pci|gdpr|none       │
+│  --airgap (offline mode with Ollama)         │
 ├─────────────────────────────────────────────┤
 │  Agent (openagent/agent.py)                  │
-│  DeepAgents + 15 tools + compliance context  │
+│  DeepAgents + 18 tools + compliance context  │
 ├────────────────────┬────────────────────────┤
 │  Brainiac Memory   │  LCM v2 Secure Memory  │
 │  Cross-project     │  Per-session encrypted  │
@@ -26,14 +27,31 @@ Built on Harrison Chase's open stack + LCM v2 encrypted memory + compliance engi
 │  Compliance Engine (openagent/compliance.py)  │
 │  Frozen policy packs, scoring, enforcement   │
 ├─────────────────────────────────────────────┤
+│  Dashboard (openagent/dashboard.py)           │
+│  REST API for compliance monitoring + export │
+├─────────────────────────────────────────────┤
+│  Contract Tools (openagent/contract_tools.py) │
+│  PDF/DOCX ingestion, PII scan, clause review │
+├─────────────────────────────────────────────┤
 │  Model: ChatNVIDIA → Nemotron 3 Super        │
+│  Air-gap: Ollama for offline inference       │
 │  Config: Pydantic v2 + YAML (Literal-typed)  │
+└─────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│  ClawGuard iOS (openharness-swift/ios/)       │
+│  Swift 6 / iOS 17+ native client             │
+│  Keychain vault, sentinel, audit ledger      │
+├─────────────────────────────────────────────┤
+│  ClawGuard Backend (openharness-swift/app/)   │
+│  FastAPI: chat, sentinel, audit, compliance  │
+│  Mobile API: connect, chat, session          │
 └─────────────────────────────────────────────┘
 ```
 
 ## Key Files
 - `main.py` — Thin entry point → `openagent.cli.main()`
-- `openagent/cli.py` — Interactive REPL + single-task + --compliance flag
+- `openagent/cli.py` — Interactive REPL + single-task + --compliance + --airgap flags
 - `openagent/agent.py` — Agent factory (model + backend + memory + compliance)
 - `openagent/compliance.py` — Policy packs, scoring, enforcement (frozen, immutable)
 - `openagent/config.py` — Pydantic v2 config (Literal-validated compliance field)
@@ -42,14 +60,21 @@ Built on Harrison Chase's open stack + LCM v2 encrypted memory + compliance engi
 - `openagent/memory.py` — Brainiac knowledge graph integration
 - `openagent/tools.py` — 6 custom tools (3 brainiac + 3 LCM) + policy enforcement
 - `openagent/lcm_client.py` — Python HTTP client for LCM server
+- `openagent/airgap.py` — Air-gap mode: offline operation with Ollama local LLMs
+- `openagent/contract_tools.py` — Contract review: PDF/DOCX ingestion, PII scan, clause analysis
+- `openagent/dashboard.py` — Compliance dashboard REST API (scoring history, audit export)
 - `packages/lcm/` — LCM v2 TypeScript (SecureStore, sentinel, PII, audit chain)
 - `packages/lcm/server.ts` — LCM HTTP server (loopback-only)
 - `openharness-v0.3.0/` — LCM v2 + OpenHarness eval framework (superset of packages/lcm)
 - `openharness-v0.3.0/src/evals/` — L1 assertions, L2 judges, EvalHarness orchestrator
+- `openharness-swift/` — ClawGuard: iOS native client + FastAPI backend
+- `openharness-swift/ios/` — Swift 6 package (ClawGuardCore library)
+- `openharness-swift/app/main.py` — FastAPI backend (app gen, sentinel, audit, mobile API)
 - `config/agent-config.yaml` — Agent + model + compliance config
 - `config/sandbox-policy.yaml` — OpenShell security policies
+- `scripts/quickstart.sh` — One-command installer for OpenAgent/VaultClaw
 
-## Agent Tools (15 total)
+## Agent Tools (18 total)
 | Tool | Source | Purpose |
 |------|--------|---------|
 | `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` | DeepAgents | Filesystem |
@@ -62,6 +87,10 @@ Built on Harrison Chase's open stack + LCM v2 encrypted memory + compliance engi
 | `secure_store` | LCM | Encrypted message storage + policy enforcement |
 | `secure_search` | LCM | PII-aware conversation search |
 | `audit_trail` | LCM | Tamper-proof compliance audit chain |
+| `contract_ingest` | Contract Tools | PDF/DOCX/TXT document ingestion |
+| `contract_pii_scan` | Contract Tools | PII detection in documents |
+| `contract_clause_review` | Contract Tools | Clause analysis for legal review |
+| `compliance_dashboard` | Dashboard | Compliance scoring + audit export API |
 
 ## Compliance
 - `--compliance hipaa|soc2|pci|gdpr|none` (CLI flag or YAML config)
@@ -97,17 +126,26 @@ LANGSMITH_API_KEY  — Optional. For LangSmith tracing
 
 ## Common Commands
 ```bash
+# Quick start (one-command installer)
+bash scripts/quickstart.sh
+
 # Start PostgreSQL + pgvector (required for LCM memory)
 cd packages/lcm && docker compose up -d
 
 # Run agent locally (no sandbox)
 NVIDIA_API_KEY=nvapi-xxx python main.py
 
+# Run in air-gap mode (offline, Ollama)
+python main.py --airgap
+
 # Run single task
 python main.py --task "Create a FastAPI server with health endpoint"
 
 # Run LCM tests (uses in-memory SQLite, no Postgres needed)
 cd packages/lcm && npm test
+
+# Run ClawGuard backend
+cd openharness-swift && uvicorn app.main:app --reload
 
 # Setup OpenShell (in WSL/Linux)
 bash scripts/setup-wsl.sh
@@ -217,6 +255,87 @@ Located at `openharness-v0.3.0/` — superset of `packages/lcm/` with 3 new eval
 - **Runtime**: Node 22+ (uses `node:sqlite`)
 - **Dependencies**: `uuid` + optional `pg`
 - **Tests**: 68 tests via vitest, all passing
+
+## OpenHarness v0.5.0 (Foundation Release — AgentFS + Governed Swarms)
+
+Located at `openharness-v0.5.0/` — full 5-layer stack with multi-agent orchestration.
+
+### 5-Layer Architecture
+```
+┌─────────────────────────────────────────┐
+│  AgentFS (Governed Swarms)              │  Multi-agent orchestration
+│  Per-agent SQLite isolation, task board │  Sentinel on writes & tool calls
+├─────────────────────────────────────────┤
+│  OpenHarness Evals (Karpathy Loop)      │  6 L1 hard gates + 5 L2 judges
+├─────────────────────────────────────────┤
+│  PrivateLaunch (Xcode Agent)            │  NL → AppSpec → SwiftUI codegen
+├─────────────────────────────────────────┤
+│  VaultClaw Secure (Governance)          │  RBAC (4 roles) + Sentinel + Audit
+├─────────────────────────────────────────┤
+│  LCM v2 (Memory Engine)                │  SQLite/PostgreSQL + FTS + pgvector
+└─────────────────────────────────────────┘
+```
+
+### Key New Files (v0.5.0)
+- `src/agentfs/types.ts` — SwarmTask, SwarmAgent, SwarmMessage, TaskEvalResult types
+- `src/agentfs/store.ts` — AgentFSStore: per-agent SQLite with governed writes + tool call logging
+- `src/agentfs/swarm.ts` — GovernedSwarm: multi-agent orchestration with sentinel + audit
+- `src/launch/types.ts` — AppSpec, FeatureSpec, DataModelSpec, ScreenSpec, DesignSystem
+- `src/launch/spec-generator.ts` — NL description → structured AppSpec
+- `src/launch/codegen.ts` — AppSpec → SwiftUI source files
+- `src/launch/pipeline.ts` — LaunchPipeline orchestrator (spec → code → sentinel → eval)
+- `backend/` — FastAPI backend (17 endpoints: health, apps, sentinel, audit, evals, swarm)
+- `backend/tests/test_swarm.py` — Swarm API tests
+
+### Architectural Invariants
+- Sentinel inspects ALL content before persistence (files, tool calls, messages)
+- RBAC checked BEFORE every operation
+- Eval harness is READ-ONLY to agents
+- Audit ledger is append-only, hash-chained (SHA-256)
+- Every AgentFS write is governed
+- Inter-agent messages are sentinel-inspected
+
+### Stats
+- 25 TS source files, 9 test files, 165 passing tests
+- 4 Python source files, 2 test files, 29 passing tests
+- 0 TypeScript errors (strict mode)
+
+### Implementation Roadmap (from Addy Osmani Orchestra integration)
+1. **Plan Approval Flow** — `plan_review` status, submitPlan/approvePlan/rejectPlan
+2. **Lifecycle Hooks** — SwarmEvent listeners (agent_spawned, task_completed, agent_idle)
+3. **Ralph Loop** — Stateless-but-iterative task execution with stuck detection
+4. **Compound Memory (AGENTS.md)** — Human-curated shared knowledge with proposal pipeline
+5. **Token Budgeting** — Per-agent budget enforcement + BudgetEnforcer hook
+6. **Reflection Proposals** — Post-task self-improvement with lead approval
+
+## ClawGuard iOS Client
+
+Native iOS/macOS client for OpenClaw/NemoClaw gateways. Located at `openharness-swift/ios/`.
+
+### Architecture
+- **Swift 6** with strict concurrency, **iOS 17+ / macOS 14+**
+- **ClawGuardCore** library: networking, security, views
+- **CredentialVault**: Keychain-backed credential storage (no plaintext persistence)
+- **SentinelPipeline**: Client-side PII/secret detection before transmission
+- **AuditLedger**: Local tamper-evident audit log with hash chains
+- **GatewayClient**: mTLS-capable HTTPS client for gateway communication
+
+### Key Swift Files
+- `ios/Package.swift` — SPM package definition
+- `ios/Sources/ClawGuardCore/Networking/GatewayClient.swift` — Gateway API client
+- `ios/Sources/ClawGuardCore/Security/CredentialVault.swift` — Keychain vault
+- `ios/Sources/ClawGuardCore/Security/SentinelPipeline.swift` — Client-side sentinel
+- `ios/Sources/ClawGuardCore/Security/AuditLedger.swift` — Hash-chain audit log
+- `ios/Sources/ClawGuardCore/Views/` — SwiftUI views (Chat, Connection, Audit, Settings, Privacy)
+
+### ClawGuard Backend (FastAPI)
+- `openharness-swift/app/main.py` — API routes
+- `POST /api/mobile/connect` — Validate gateway connection
+- `POST /api/mobile/chat` — Message with sentinel enforcement
+- `GET /api/mobile/session` — Session info + security status
+- `GET /api/compliance/report` — Full compliance report
+- `POST /api/sentinel/inspect` — Content sentinel inspection
+- `GET /api/audit` + `GET /api/audit/verify` — Audit log + chain verification
 
 ## References
 - OpenShell: https://github.com/NVIDIA/OpenShell
