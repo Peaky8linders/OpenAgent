@@ -50,6 +50,10 @@ export { SecureStore } from './src/secure/secure-store.js';
 // AgentFS (governed agent filesystem + swarm orchestration)
 export { AgentFSStore } from './src/agentfs/store.js';
 export { GovernedSwarm } from './src/agentfs/swarm.js';
+export { HookRegistry, createSentinelHook, createL1EvalHook } from './src/agentfs/hooks.js';
+export type {
+  SwarmEvent, SwarmHook, HookContext, HookResult, HookFireResult, HookResultEntry,
+} from './src/agentfs/hooks.js';
 export type {
   AgentFSConfig, AgentInode, AgentDentry, AgentKVEntry, AgentToolCall,
   SwarmConfig, SwarmAgent, SwarmTask, SwarmMessage, SwarmRole,

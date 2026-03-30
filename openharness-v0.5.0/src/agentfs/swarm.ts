@@ -27,6 +27,7 @@ import {
   noUnsafePatterns, noPiiInOutput, storeHealthy,
 } from '../evals/l1-assertions.js';
 import type { LcmStore } from '../store/lcm-store.js';
+import type { HookRegistry, HookContext } from './hooks.js';
 
 export class GovernedSwarm {
   private readonly config: SwarmConfig;
@@ -37,17 +38,20 @@ export class GovernedSwarm {
   private readonly tasks = new Map<string, SwarmTask>();
   private readonly messages: SwarmMessage[] = [];
   private readonly l1Gates: L1Assertion[];
+  private readonly hookRegistry?: HookRegistry;
 
   constructor(
     config: SwarmConfig,
     sentinel: SentinelInspector,
     audit: AuditLedgerWriter,
     extraL1Gates?: L1Assertion[],
+    hookRegistry?: HookRegistry,
   ) {
     this.config = config;
     this.sentinel = sentinel;
     this.audit = audit;
     this.l1Gates = [noUnsafePatterns, noPiiInOutput, ...(extraL1Gates ?? [])];
+    this.hookRegistry = hookRegistry;
 
     this.audit.record({
       type: 'swarm:created',
@@ -93,6 +97,9 @@ export class GovernedSwarm {
       details: { agentId: id, name, role, model: resolvedModel },
       outcome: 'success',
     });
+
+    // Fire agent_spawned hooks (async, non-blocking for spawn)
+    this.fireHooks('agent_spawned', { event: 'agent_spawned', agent, agentStore: store });
 
     return agent;
   }
@@ -309,14 +316,45 @@ export class GovernedSwarm {
       }
     }
 
+    // Fire task_completed hooks before finalizing
+    const allContent = agentStore
+      ? agentStore.listDir('/').map(f => agentStore.readFile(`/${f.name}`) ?? '').join('\n')
+      : '';
+
+    const hookResult = await this.fireHooks('task_completed', {
+      event: 'task_completed',
+      agent,
+      task,
+      agentStore: agentStore ?? undefined,
+      lcmStore: store,
+      content: allContent,
+    });
+
+    if (hookResult && !hookResult.passed && hookResult.blockedBy) {
+      this.tasks.set(taskId, { ...task, status: 'failed', evalResults: evalResult });
+      this.agents.set(agent.id, { ...agent, status: 'failed', lastActivityAt: Date.now() });
+
+      this.audit.record({
+        type: 'swarm:hook_blocked',
+        details: { taskId, agentId: agent.id, hook: hookResult.blockedBy },
+        outcome: 'blocked',
+      });
+      return { completed: false, evalResult };
+    }
+
     this.tasks.set(taskId, { ...task, status: 'completed', completedAt: Date.now(), evalResults: evalResult });
-    this.agents.set(agent.id, { ...agent, status: 'idle', assignedTask: undefined, lastActivityAt: Date.now() });
+    const updatedAgent: SwarmAgent = { ...agent, status: 'idle', assignedTask: undefined, lastActivityAt: Date.now() };
+    this.agents.set(agent.id, updatedAgent);
 
     this.audit.record({
       type: 'swarm:task_completed',
       details: { taskId, agentId: agent.id, title: task.title, evalPassed: evalResult?.l1Passed ?? true },
       outcome: 'success',
     });
+
+    // Fire agent_idle hooks after task completion
+    this.fireHooks('agent_idle', { event: 'agent_idle', agent: updatedAgent, agentStore: agentStore ?? undefined });
+
     return { completed: true, evalResult };
   }
 
@@ -409,6 +447,14 @@ export class GovernedSwarm {
     });
 
     return snapshot;
+  }
+
+  // ─── Hook Integration ──────────────────────────────────────────
+
+  /** Fire hooks for a given event. Returns null if no registry configured. */
+  private async fireHooks(event: HookContext['event'], ctx: HookContext): Promise<{ passed: boolean; blockedBy?: string } | null> {
+    if (!this.hookRegistry) return null;
+    return this.hookRegistry.fire(event, ctx);
   }
 
   /** Clean up all agents. */
