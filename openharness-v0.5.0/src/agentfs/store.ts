@@ -177,6 +177,34 @@ export class AgentFSStore {
     return rows;
   }
 
+  /**
+   * Recursively read all file contents in the agent filesystem.
+   * Uses inode tracking to prevent cycles (symlinks stored as inodes).
+   * Returns concatenated content of all files, suitable for L1 eval gates.
+   */
+  readAllFiles(dirPath: string = '/', visited: Set<number> = new Set()): string {
+    const ino = dirPath === '/' ? ROOT_INO : this.resolveInode(dirPath);
+    if (ino === null || visited.has(ino)) return '';
+    visited.add(ino);
+
+    const entries = this.listDir(dirPath);
+    const parts: string[] = [];
+
+    for (const entry of entries) {
+      if (visited.has(entry.ino)) continue; // cycle guard
+      if (entry.file_type === 'file') {
+        const prefix = dirPath === '/' ? '' : dirPath;
+        const content = this.readFile(`${prefix}/${entry.name}`);
+        if (content) parts.push(content);
+      } else if (entry.file_type === 'directory') {
+        const subPath = dirPath === '/' ? `/${entry.name}` : `${dirPath}/${entry.name}`;
+        parts.push(this.readAllFiles(subPath, visited));
+      }
+    }
+
+    return parts.join('\n');
+  }
+
   /** Check if a file exists. */
   exists(path: string): boolean {
     return this.resolveInode(path) !== null;

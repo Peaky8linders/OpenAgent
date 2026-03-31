@@ -337,6 +337,33 @@ class SwarmOrchestrator:
 
         return ModelTier.BALANCED
 
+    # ─── Plan Approval Flow ───────────────────────────
+
+    def approve_plan(self, task_id: str) -> bool:
+        """Approve a task plan — moves task from plan_review to in_progress."""
+        task = self.tasks.get(task_id)
+        if not task or task.status.value != "plan_review":
+            return False
+        task.status = TaskStatus.IN_PROGRESS
+        self.audit.record("plan_approved", task_id, "success", {"task_subject": task.subject})
+        return True
+
+    def reject_plan(self, task_id: str, reason: str) -> bool:
+        """Reject a task plan — moves task back to assigned for revision."""
+        task = self.tasks.get(task_id)
+        if not task or task.status.value != "plan_review":
+            return False
+        task.status = TaskStatus.ASSIGNED
+        task.revert_reason = reason
+        self.audit.record("plan_rejected", task_id, "failure", {
+            "task_subject": task.subject, "reason": reason,
+        })
+        return True
+
+    def list_hooks(self) -> list[str]:
+        """Return registered hook names. Hooks are registered at swarm creation."""
+        return list(getattr(self, '_hooks', {}).keys())
+
     # ─── Swarm Status ─────────────────────────────────
 
     def status(self) -> dict:

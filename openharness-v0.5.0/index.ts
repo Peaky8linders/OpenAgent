@@ -50,7 +50,7 @@ export { SecureStore } from './src/secure/secure-store.js';
 // AgentFS (governed agent filesystem + swarm orchestration)
 export { AgentFSStore } from './src/agentfs/store.js';
 export { GovernedSwarm } from './src/agentfs/swarm.js';
-export { HookRegistry, createSentinelHook, createL1EvalHook } from './src/agentfs/hooks.js';
+export { HookRegistry, createSentinelHook, createL1EvalHook, createBudgetEnforcerHook } from './src/agentfs/hooks.js';
 export type {
   SwarmEvent, SwarmHook, HookContext, HookResult, HookFireResult, HookResultEntry,
 } from './src/agentfs/hooks.js';
@@ -60,6 +60,10 @@ export type {
   TaskStatus, PlanStatus,
   TaskEvalResult, GovernedWrite, AgentSnapshot,
 } from './src/agentfs/types.js';
+export { CompoundMemory } from './src/agentfs/compound-memory.js';
+export type { MemorySection, Proposal } from './src/agentfs/compound-memory.js';
+export { RalphLoop } from './src/agentfs/ralph-loop.js';
+export type { RalphConfig, RalphResult, TaskExecutor } from './src/agentfs/ralph-loop.js';
 export type {
   SecureUser, SecureRole, SecureStoreConfig,
   SentinelInspector, AuditLedgerWriter,

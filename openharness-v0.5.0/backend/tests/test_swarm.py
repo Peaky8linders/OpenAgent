@@ -228,6 +228,94 @@ class TestSwarmAPI:
         r = client.get("/api/swarm/nonexistent/status")
         assert r.status_code == 404
 
+    # ─── P6: Plan Approve / Reject ────────────────────────────────
+
+    def test_approve_plan_requires_plan_review_status(self):
+        """approve_plan returns 400 when task isn't in plan_review."""
+        client.post("/api/swarm/create", json={"name": "plan-swarm"})
+        r_task = client.post("/api/swarm/plan-swarm/tasks", json={"subject": "Plan task", "description": "desc"})
+        task_id = r_task.json()["task_id"]
+        r = client.post(f"/api/swarm/plan-swarm/tasks/{task_id}/plan/approve")
+        assert r.status_code == 400
+
+    def test_reject_plan_requires_plan_review_status(self):
+        """reject_plan returns 400 when task isn't in plan_review."""
+        client.post("/api/swarm/create", json={"name": "reject-plan-swarm"})
+        r_task = client.post("/api/swarm/reject-plan-swarm/tasks", json={"subject": "T", "description": "D"})
+        task_id = r_task.json()["task_id"]
+        r = client.post(f"/api/swarm/reject-plan-swarm/tasks/{task_id}/plan/reject", json={"reason": "No"})
+        assert r.status_code == 400
+
+    def test_approve_plan_swarm_not_found(self):
+        r = client.post("/api/swarm/ghost/tasks/xyz/plan/approve")
+        assert r.status_code == 404
+
+    def test_reject_plan_swarm_not_found(self):
+        r = client.post("/api/swarm/ghost/tasks/xyz/plan/reject", json={"reason": "gone"})
+        assert r.status_code == 404
+
+    # ─── P6: Hooks ───────────────────────────────────────────────
+
+    def test_list_hooks_empty_by_default(self):
+        client.post("/api/swarm/create", json={"name": "hooks-swarm"})
+        r = client.get("/api/swarm/hooks-swarm/hooks")
+        assert r.status_code == 200
+        assert "hooks" in r.json()
+
+    def test_list_hooks_swarm_not_found(self):
+        r = client.get("/api/swarm/ghost/hooks")
+        assert r.status_code == 404
+
+    # ─── P6: Ralph Loop ──────────────────────────────────────────
+
+    def test_ralph_start_empty_swarm(self):
+        client.post("/api/swarm/create", json={"name": "ralph-swarm"})
+        r = client.post("/api/swarm/ralph-swarm/ralph/start", json={})
+        assert r.status_code == 200
+        body = r.json()
+        assert "total_iterations" in body
+        assert "completed" in body
+
+    def test_ralph_swarm_not_found(self):
+        r = client.post("/api/swarm/ghost/ralph/start", json={})
+        assert r.status_code == 404
+
+    # ─── P6: Compound Memory ─────────────────────────────────────
+
+    def test_get_memory_empty(self):
+        client.post("/api/swarm/create", json={"name": "memory-swarm"})
+        r = client.get("/api/swarm/memory-swarm/memory")
+        assert r.status_code == 200
+        assert r.json()["sections"] == {}
+
+    def test_propose_memory_valid_section(self):
+        client.post("/api/swarm/create", json={"name": "mem-propose-swarm"})
+        r = client.post("/api/swarm/mem-propose-swarm/memory/propose", json={
+            "section": "GOTCHAS", "entry": "Always UTC timestamps", "agent_id": "agent-1"
+        })
+        assert r.status_code == 200
+        assert "proposal_id" in r.json()
+        assert r.json()["status"] == "pending"
+
+    def test_propose_memory_invalid_section(self):
+        client.post("/api/swarm/create", json={"name": "mem-bad-swarm"})
+        r = client.post("/api/swarm/mem-bad-swarm/memory/propose", json={
+            "section": "INVALID", "entry": "something", "agent_id": "agent-1"
+        })
+        assert r.status_code == 400
+
+    def test_propose_memory_swarm_not_found(self):
+        r = client.post("/api/swarm/ghost/memory/propose", json={
+            "section": "STYLE", "entry": "entry", "agent_id": "a1"
+        })
+        assert r.status_code == 404
+
+    def test_approve_memory_proposal(self):
+        client.post("/api/swarm/create", json={"name": "mem-approve-swarm"})
+        r = client.post("/api/swarm/mem-approve-swarm/memory/proposals/test-uuid/approve")
+        assert r.status_code == 200
+        assert r.json()["approved"] is True
+
     def test_model_recommendation_in_task_creation(self):
         client.post("/api/swarm/create", json={"name": "model-route-swarm"})
         r = client.post("/api/swarm/model-route-swarm/tasks", json={
