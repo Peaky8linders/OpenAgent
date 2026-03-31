@@ -78,6 +78,10 @@ export interface SwarmAgent {
   readonly assignedTask?: string;
   readonly startedAt: number;
   readonly lastActivityAt: number;
+  /** Token budget for this agent (undefined = unlimited) */
+  readonly tokenBudget?: number;
+  /** Cumulative tokens used by this agent across all tasks */
+  readonly tokensUsed: number;
 }
 
 export type TaskStatus = 'pending' | 'claimed' | 'in_progress' | 'plan_review' | 'review' | 'completed' | 'failed';

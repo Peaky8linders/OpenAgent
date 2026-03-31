@@ -166,6 +166,41 @@ export function createSentinelHook(sentinel: SentinelInspector): SwarmHook {
 }
 
 /**
+ * Budget enforcer hook — pauses (warns) at 85%, blocks at 100% token budget.
+ * Fires on task_completed so the agent can't complete if over budget.
+ *
+ * Wire-up: call swarm.recordTokenUsage(agentId, tokens) after each LLM call.
+ * tokenBudget must be > 0 (validate at hook creation time).
+ */
+export function createBudgetEnforcerHook(tokenBudget: number): SwarmHook {
+  if (tokenBudget <= 0) throw new Error(`tokenBudget must be > 0, got ${tokenBudget}`);
+  return {
+    event: 'task_completed',
+    name: 'budget_enforcer',
+    async handler(ctx: HookContext): Promise<HookResult> {
+      if (!ctx.agent) return { passed: true, action: 'allow' };
+      const used = ctx.agent.tokensUsed;
+      const pct = used / tokenBudget;
+      if (pct >= 1.0) {
+        return {
+          passed: false,
+          feedback: `Token budget exhausted: ${used}/${tokenBudget} tokens (${Math.round(pct * 100)}%)`,
+          action: 'block',
+        };
+      }
+      if (pct >= 0.85) {
+        return {
+          passed: true,
+          feedback: `Token budget warning: ${used}/${tokenBudget} tokens (${Math.round(pct * 100)}%)`,
+          action: 'allow',
+        };
+      }
+      return { passed: true, action: 'allow' };
+    },
+  };
+}
+
+/**
  * L1 eval hook — runs L1 hard gates on task output.
  * Blocks if any L1 assertion fails.
  */

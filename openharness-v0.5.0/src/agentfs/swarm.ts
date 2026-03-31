@@ -87,6 +87,7 @@ export class GovernedSwarm {
       id, name, role, model: resolvedModel,
       dbPath, status: 'idle',
       startedAt: Date.now(), lastActivityAt: Date.now(),
+      tokensUsed: 0,
     };
 
     this.agents.set(id, agent);
@@ -271,7 +272,7 @@ export class GovernedSwarm {
    * Complete a task. Runs L1 eval gates on the agent's output.
    * If eval gates fail, the task is marked as failed.
    */
-  async completeTask(taskId: string, store?: LcmStore): Promise<{ completed: boolean; evalResult?: TaskEvalResult }> {
+  async completeTask(taskId: string, store?: LcmStore): Promise<{ completed: boolean; evalResult?: TaskEvalResult; hookAction?: 'allow' | 'retry' | 'block' }> {
     const task = this.tasks.get(taskId);
     if (!task || !task.assignedTo) return { completed: false };
 
@@ -284,42 +285,34 @@ export class GovernedSwarm {
     const agentStore = this.agentStores.get(agent.id);
     let evalResult: TaskEvalResult | undefined;
 
+    // Collect all agent output once (used by L1 gates and hooks below)
+    const allContent = agentStore ? agentStore.readAllFiles() : '';
+
     // Run L1 eval gates if configured
-    if (this.config.evalOnComplete && agentStore) {
-      // Collect all files the agent wrote
-      const files = agentStore.listDir('/');
-      const allContent = files.map(f => agentStore.readFile(`/${f.name}`) ?? '').join('\n');
+    if (this.config.evalOnComplete && agentStore && store && allContent.length > 0) {
+      const ctx: L1Context = { store, output: allContent, targetContent: allContent };
+      const l1 = await runL1Suite(this.l1Gates, ctx);
 
-      if (store && allContent.length > 0) {
-        const ctx: L1Context = { store, output: allContent, targetContent: allContent };
-        const l1 = await runL1Suite(this.l1Gates, ctx);
+      evalResult = {
+        l1Passed: l1.passed,
+        l1Failures: l1.assertions.filter(a => !a.passed).map(a => a.name),
+        l2Passed: null,
+        l2PassRate: null,
+        metricDelta: null,
+      };
 
-        evalResult = {
-          l1Passed: l1.passed,
-          l1Failures: l1.assertions.filter(a => !a.passed).map(a => a.name),
-          l2Passed: null,
-          l2PassRate: null,
-          metricDelta: null,
-        };
+      if (!l1.passed) {
+        this.tasks.set(taskId, { ...task, status: 'failed', evalResults: evalResult });
+        this.agents.set(agent.id, { ...agent, status: 'failed', lastActivityAt: Date.now() });
 
-        if (!l1.passed) {
-          this.tasks.set(taskId, { ...task, status: 'failed', evalResults: evalResult });
-          this.agents.set(agent.id, { ...agent, status: 'failed', lastActivityAt: Date.now() });
-
-          this.audit.record({
-            type: 'swarm:task_eval_failed',
-            details: { taskId, agentId: agent.id, failures: evalResult.l1Failures },
-            outcome: 'failure',
-          });
-          return { completed: false, evalResult };
-        }
+        this.audit.record({
+          type: 'swarm:task_eval_failed',
+          details: { taskId, agentId: agent.id, failures: evalResult.l1Failures },
+          outcome: 'failure',
+        });
+        return { completed: false, evalResult };
       }
     }
-
-    // Fire task_completed hooks before finalizing
-    const allContent = agentStore
-      ? agentStore.listDir('/').map(f => agentStore.readFile(`/${f.name}`) ?? '').join('\n')
-      : '';
 
     const hookResult = await this.fireHooks('task_completed', {
       event: 'task_completed',
@@ -330,16 +323,18 @@ export class GovernedSwarm {
       content: allContent,
     });
 
-    if (hookResult && !hookResult.passed && hookResult.blockedBy) {
-      this.tasks.set(taskId, { ...task, status: 'failed', evalResults: evalResult });
-      this.agents.set(agent.id, { ...agent, status: 'failed', lastActivityAt: Date.now() });
-
+    if (hookResult && !hookResult.passed) {
+      // Only mark failed for 'block'; 'retry' lets RalphLoop re-queue the task
+      if (hookResult.action !== 'retry') {
+        this.tasks.set(taskId, { ...task, status: 'failed', evalResults: evalResult });
+        this.agents.set(agent.id, { ...agent, status: 'failed', lastActivityAt: Date.now() });
+      }
       this.audit.record({
         type: 'swarm:hook_blocked',
-        details: { taskId, agentId: agent.id, hook: hookResult.blockedBy },
+        details: { taskId, agentId: agent.id, hook: hookResult.blockedBy, action: hookResult.action },
         outcome: 'blocked',
       });
-      return { completed: false, evalResult };
+      return { completed: false, evalResult, hookAction: hookResult.action };
     }
 
     this.tasks.set(taskId, { ...task, status: 'completed', completedAt: Date.now(), evalResults: evalResult });
@@ -399,6 +394,8 @@ export class GovernedSwarm {
       timestamp: Date.now(), inspected,
     };
     this.messages.push(msg);
+    // FIFO cap: evict oldest 100 when over 1000
+    if (this.messages.length > 1000) this.messages.splice(0, 100);
     return msg;
   }
 
@@ -408,6 +405,43 @@ export class GovernedSwarm {
       (m.to === agentId || m.to === 'broadcast') &&
       (!since || m.timestamp > since),
     );
+  }
+
+  // ─── Token Budgeting ─────────────────────────────────────────
+
+  /**
+   * Record token usage for an agent after an LLM call.
+   * Callers invoke this after each model response with response.usage tokens.
+   * The BudgetEnforcer hook reads tokensUsed before task_completed fires.
+   */
+  recordTokenUsage(agentId: string, tokens: number): SwarmAgent {
+    if (tokens < 0) throw new Error(`tokens must be >= 0, got ${tokens}`);
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} not found`);
+    const updated: SwarmAgent = { ...agent, tokensUsed: agent.tokensUsed + tokens, lastActivityAt: Date.now() };
+    this.agents.set(agentId, updated);
+    this.audit.record({
+      type: 'swarm:tokens_recorded',
+      details: { agentId, tokens, totalUsed: updated.tokensUsed, budget: updated.tokenBudget },
+      outcome: 'success',
+    });
+    return updated;
+  }
+
+  /**
+   * Requeue a task back to pending status, clearing its assignment.
+   * Used by RalphLoop after a retry or executor failure to allow re-pickup.
+   */
+  requeueTask(taskId: string): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task) return false;
+    this.tasks.set(taskId, { ...task, status: 'pending', assignedTo: null });
+    this.audit.record({
+      type: 'swarm:task_requeued',
+      details: { taskId, previousStatus: task.status },
+      outcome: 'success',
+    });
+    return true;
   }
 
   // ─── Swarm State Queries ─────────────────────────────────────
@@ -452,9 +486,15 @@ export class GovernedSwarm {
   // ─── Hook Integration ──────────────────────────────────────────
 
   /** Fire hooks for a given event. Returns null if no registry configured. */
-  private async fireHooks(event: HookContext['event'], ctx: HookContext): Promise<{ passed: boolean; blockedBy?: string } | null> {
+  private async fireHooks(
+    event: HookContext['event'],
+    ctx: HookContext,
+  ): Promise<{ passed: boolean; blockedBy?: string; action?: 'allow' | 'retry' | 'block' } | null> {
     if (!this.hookRegistry) return null;
-    return this.hookRegistry.fire(event, ctx);
+    const result = await this.hookRegistry.fire(event, ctx);
+    // Surface the action from the first failing hook so callers (e.g. RalphLoop) can act on it
+    const failingEntry = result.results.find(r => !r.result.passed);
+    return { passed: result.passed, blockedBy: result.blockedBy, action: failingEntry?.result.action };
   }
 
   /** Clean up all agents. */

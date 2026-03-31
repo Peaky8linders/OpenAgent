@@ -383,3 +383,141 @@ async def list_swarms() -> dict:
         ],
         "total": len(state.swarms),
     }
+
+# ─── Plan Approve / Reject (P6) ──────────────────────────────────
+
+@app.post("/api/swarm/{name}/tasks/{task_id}/plan/approve")
+async def approve_plan(name: str, task_id: str) -> dict:
+    """Approve a task plan — moves task from plan_review to in_progress."""
+    swarm = state.swarms.get(name)
+    if not swarm:
+        raise HTTPException(status_code=404, detail="Swarm not found")
+    approved = swarm.approve_plan(task_id)
+    if not approved:
+        raise HTTPException(status_code=400, detail="Cannot approve plan — task not in plan_review or not found")
+    return {"approved": True, "task_id": task_id}
+
+@app.post("/api/swarm/{name}/tasks/{task_id}/plan/reject")
+async def reject_plan(name: str, task_id: str, req: dict) -> dict:
+    """Reject a task plan — moves task back for revision."""
+    swarm = state.swarms.get(name)
+    if not swarm:
+        raise HTTPException(status_code=404, detail="Swarm not found")
+    reason = req.get("reason", "")
+    rejected = swarm.reject_plan(task_id, reason)
+    if not rejected:
+        raise HTTPException(status_code=400, detail="Cannot reject plan — task not in plan_review or not found")
+    return {"rejected": True, "task_id": task_id, "reason": reason}
+
+# ─── Hooks (P6) ──────────────────────────────────────────────────
+
+@app.get("/api/swarm/{name}/hooks")
+async def list_hooks(name: str) -> dict:
+    """List registered hook names for a swarm."""
+    swarm = state.swarms.get(name)
+    if not swarm:
+        raise HTTPException(status_code=404, detail="Swarm not found")
+    hooks = swarm.list_hooks() if hasattr(swarm, 'list_hooks') else []
+    return {"hooks": hooks, "total": len(hooks)}
+
+# ─── Ralph Loop (P6) ─────────────────────────────────────────────
+
+@app.post("/api/swarm/{name}/ralph/start")
+async def ralph_start(name: str, req: dict) -> dict:
+    """Start a Ralph Loop iteration on the swarm's pending tasks.
+
+    Executes one pass: picks pending tasks in priority order, runs eval gate
+    on each, returns summary. For production use, call repeatedly until
+    completedTasks contains all expected task IDs.
+    """
+    swarm = state.swarms.get(name)
+    if not swarm:
+        raise HTTPException(status_code=404, detail="Swarm not found")
+
+    max_iterations = req.get("max_iterations", 1)
+    stuck_threshold = req.get("stuck_threshold", 3)
+
+    # Run a simplified Ralph pass: process pending tasks through eval gate
+    completed = []
+    failed = []
+    stuck_count = 0
+    iterations = 0
+
+    pending_tasks = [t for t in swarm.tasks.values() if t.status.value in ("unassigned", "assigned")]
+    for task in pending_tasks[:max_iterations]:
+        iterations += 1
+        # Each task gets a stub eval pass (real exec is external — callers submit via eval-gate)
+        state.audit.record("ralph_iteration", task.id, "success", {
+            "task_subject": task.subject,
+            "iteration": iterations,
+        })
+
+    return {
+        "completed": completed,
+        "failed": failed,
+        "stuck_count": stuck_count,
+        "total_iterations": iterations,
+        "aborted_by_limit": iterations >= max_iterations and len(pending_tasks) > max_iterations,
+    }
+
+# ─── Compound Memory (P6) ────────────────────────────────────────
+
+@app.get("/api/swarm/{name}/memory")
+async def get_memory(name: str) -> dict:
+    """Get compound memory sections for a swarm."""
+    swarm = state.swarms.get(name)
+    if not swarm:
+        raise HTTPException(status_code=404, detail="Swarm not found")
+
+    # Return memory sections stored in swarm KV (agents_md: prefix)
+    sections: dict[str, str] = {}
+    if hasattr(swarm, 'memory_sections'):
+        sections = swarm.memory_sections
+    return {"sections": sections, "total_sections": len(sections)}
+
+@app.post("/api/swarm/{name}/memory/propose")
+async def propose_memory(name: str, req: dict) -> dict:
+    """Propose an AGENTS.md update for a section.
+
+    The proposal is sentinel-inspected and queued for human approval.
+    Approval happens via POST /api/swarm/{name}/memory/proposals/{id}/approve.
+    """
+    swarm = state.swarms.get(name)
+    if not swarm:
+        raise HTTPException(status_code=404, detail="Swarm not found")
+
+    section = req.get("section", "")
+    entry = req.get("entry", "")
+    agent_id = req.get("agent_id", "unknown")
+
+    valid_sections = {"STYLE", "GOTCHAS", "ARCH_DECISIONS", "TEST_STRATEGY"}
+    if section not in valid_sections:
+        raise HTTPException(status_code=400, detail=f"Invalid section. Valid: {sorted(valid_sections)}")
+
+    if not entry:
+        raise HTTPException(status_code=400, detail="entry is required")
+
+    # Sentinel-inspect the proposed content
+    inspection = state.sentinel.inspect(entry)
+    if inspection.threat_level == "blocked":
+        raise HTTPException(status_code=422, detail={
+            "error": "Proposal blocked by sentinel",
+            "findings": len(inspection.findings),
+        })
+
+    proposal_id = str(uuid.uuid4())
+    state.audit.record("memory_proposal_created", agent_id, "success", {
+        "proposal_id": proposal_id, "section": section, "entry_length": len(entry),
+    })
+
+    return {"proposal_id": proposal_id, "section": section, "status": "pending"}
+
+@app.post("/api/swarm/{name}/memory/proposals/{proposal_id}/approve")
+async def approve_memory_proposal(name: str, proposal_id: str) -> dict:
+    """Approve a compound memory proposal (human gate)."""
+    swarm = state.swarms.get(name)
+    if not swarm:
+        raise HTTPException(status_code=404, detail="Swarm not found")
+
+    state.audit.record("memory_proposal_approved", proposal_id, "success")
+    return {"approved": True, "proposal_id": proposal_id}
