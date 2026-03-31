@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: lcm-v2-postgres
+    environment:
+      POSTGRES_DB: lcm_v2
+      POSTGRES_USER: lcm
+      POSTGRES_PASSWORD: lcm
+    ports:
+      - "5432:5432"
+    volumes:
+      - lcm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lcm -d lcm_v2"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  lcm_pgdata:
